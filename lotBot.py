@@ -38,10 +38,23 @@ async def cmd_start(message: types.Message):
     await checkersStart()
 
 
+@dp.message_handler(commands=['ppmanag'])
+async def adm_manage(message: types.Message):
+    m = message.from_user
+    user_id = message.from_user.id
+    if (await db.adm_check(user_id)):
+        if (await db.adm_valid_check(user_id)):
+            await b().ppmanag_main(message)
+        else:
+            await b().ppmanag_no_valid(message)
+    else:
+        await b().ppmanag_no(message)
+
+
 #Выбор способа пополнения баланса. Запрос типа "top_up_balance_откуда перенаправило(04)_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[:15] == "top_up_balance_")
 async def way_topup(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         chat_id = call.message.chat.id
         way = call.data[15:19]
         await call.answer(text="Загрузка способов пополнения")
@@ -68,10 +81,10 @@ async def way_topup(call):
         await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
 
 
-#Врзвращения в аккаунт. Запрос типа "back_to_acc_айди сообщения(10)"
+#Возвращения в аккаунт. Запрос типа "back_to_acc_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[:12] == "back_to_acc_")
 async def back_acc(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         user_id = call.from_user.id
         chat_id = call.message.chat.id
         await call.answer(text="Возвращение в аккаунт")
@@ -98,7 +111,7 @@ async def back_acc(call):
 #Выбор способа вывода. Запрос типа "withdraw_balance_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[:17] == "withdraw_balance_")
 async def way_with(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         chat_id = call.message.chat.id
         msg_id = call.data[18:].lstrip("0")
         keyboard = types.InlineKeyboardMarkup(row_width=2);
@@ -122,7 +135,7 @@ async def way_with(call):
 #Выбор суммы вывода. Запрос типа "way_with_способ(04)_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[:9] == "way_with_")
 async def choose_sum_with(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         chat_id = call.message.chat.id
         keyboard = types.InlineKeyboardMarkup(row_width=2);
         way_with = call.data[9:13]
@@ -161,14 +174,14 @@ async def choose_sum_with(call):
 #Ввод реквизитов вывода. Проверка возможности вывода введенной суммы. Запрос типа "способ(04)_withd_sum_сумма(06)_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[4:15] == "_withd_sum_")
 async def enter_requi(call, state: FSMContext):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         user_id = call.from_user.id
         chat_id = call.message.chat.id
         msg_id = call.data[22:].lstrip("0")
         way_with = call.data[:4]
         sum_with = int(call.data[15:21].lstrip("0"));
         keyboard = types.InlineKeyboardMarkup(row_width=1);
-        await call.answer(text="Загрузка ввода реквезитов")
+        await call.answer(text="Загрузка ввода реквизитов")
         if sum_with <= int(await db.get_user_balance(user_id)):
             if way_with == "bank":
                 msg = await bot.edit_message_text(text=t.m_enter_requisites_bank, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
@@ -195,7 +208,7 @@ async def enter_requi(call, state: FSMContext):
 #Вывод справок об играх. Из главного меню. Запрос типа "que_тип игры(04)_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[:4] == "que_")
 async def info_games(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         game = call.data[4:8]
         msg_id = call.data[9:]
         chat_id = call.message.chat.id
@@ -216,23 +229,18 @@ async def info_games(call):
 #Назад к играм. Запрос типа "back_to_game_игра(04)"
 @dp.callback_query_handler(lambda call: call.data[:13] == "back_to_game_")
 async def back_games(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         await call.answer(text="Возвращение к играм")
         game = call.data[13:17]
         msg_id = call.data[18:]
         call_send = 1
-        if game == "king":
-            await b().ButtonGameBet(game, call_send, call.from_user.id, call.message.chat.id, msg_id)
-        elif game == "russ":
-            await b().ButtonRussBet(call_send, call.from_user.id, call.message.chat.id, msg_id)
-        elif game == "duel":
-            await b().ButtonDuelBet(call_send, call.from_user.id, call.message.chat.id, msg_id)
+        await b().ButtonGameBet(game, call_send, call.from_user.id, call.message.chat.id, msg_id)
 
 
 #Вывод списка операций. Переход из ЛК или выбора отображения всех операций. Запрос типа "story_topup_количество(0 - 10 шт, 1 - все)_айди сообщения"
 @dp.callback_query_handler(lambda call: call.data[:12] == "story_topup_")
 async def story_oper(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         await call.answer(text="Загрузка операций")
         if call.data[:14] == "story_topup_1_": #Для отображения всех
             msg_id = call.data[14:].lstrip("0")
@@ -311,7 +319,7 @@ async def story_oper(call):
 # Выбор суммы пополнения. После выбора способа пополнения. Запрос типа "way_topup_способ(04)_откуда(04)_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[:10] == "way_topup_")
 async def choose_sum_topup(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         chat_id = call.message.chat.id
         await call.answer(text="Загрузка сумм вывода")
         keyboard = types.InlineKeyboardMarkup(row_width=2);
@@ -349,7 +357,7 @@ async def choose_sum_topup(call):
 # Вывод информации для пополнения. После успешного создания заявки на пополнение. Запрос типа "способ(04)_topup_sum_сумма(06)_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[4:15] == "_topup_sum_")
 async def info_topup(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         chat_id = call.message.chat.id
         user_id = call.from_user.id
         await call.answer(text="Загрузка информации о пополнении")
@@ -375,7 +383,7 @@ async def info_topup(call):
 #Ручной ввод суммы пополнения или вывода. После выбора ручного ввода. Запрос типа "способ(04)_операция(05)_other_sum_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[10:21] == "_other_sum_")
 async def enter_sum_topup(call, state: FSMContext):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         await call.answer(text="Загрузка поля ввода")
         chat_id = call.message.chat.id
         oper = call.data[5:10]
@@ -395,7 +403,7 @@ async def enter_sum_topup(call, state: FSMContext):
 #Удаления сообщения. Запрос типа "delete_msg_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[:11] == "delete_msg_")
 async def deleter(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         await call.answer(text="Закрытие сообщения")
         chat_id = call.message.chat.id
         await bot.delete_message(chat_id, call.data[11:].lstrip("0"))
@@ -404,7 +412,7 @@ async def deleter(call):
 #Проверка пополнения. Запрос типа "(re)check_topup_способ(04)_айди платежа(07)_ади сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[:12] == "check_topup_" or call.data[:14] == "recheck_topup_")
 async def check_topup(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         await call.answer(text="Проверка пополнения")
         if call.data[:12] == "check_topup_":
             N=0
@@ -420,7 +428,7 @@ async def check_topup(call):
 #Создание заявки на вывод после подтверждения правильности данных. Запрос типа "confirm_with_способ(04)_сумма(06)_реквизиты(17)_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[:13] == "confirm_with_")
 async def create_withd(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         user_id = call.from_user.id
         chat_id = call.message.chat.id
         await call.answer(text="Загрузка подтверждения")
@@ -447,7 +455,7 @@ async def create_withd(call):
 #Проерка ставки и игры. Запрос типа "bet_игра(04)_сумма(06)_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[:4] == "bet_")
 async def check_bet(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         await call.answer(text="Проверка данных")
         keyboard = types.InlineKeyboardMarkup()
         game = call.data[4:8]
@@ -489,7 +497,7 @@ async def check_bet(call):
 #Изменение игры. Запрос типа "change_bet_айди сообщения(10)"
 @dp.callback_query_handler(lambda call: call.data[:11] == "change_bet_")
 async def changer_bet(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         if call.data[:11] == "change_bet_":
             await call.answer(text="Загрузка смены игры")
             msg_id = call.data[12:]
@@ -500,7 +508,7 @@ async def changer_bet(call):
 #Создание игровой комнаты и обработка игры. Запрос типа "create_bet_игра(04)_сумма(06)_айди сообщения(10). Перен"
 @dp.callback_query_handler(lambda call: call.data[:11] == "create_bet_")
 async def creating_room(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         await call.answer(text="Создание игры")
         user_id = call.from_user.id
         game = call.data[11:15]
@@ -510,7 +518,7 @@ async def creating_room(call):
 
 @dp.callback_query_handler(lambda call: call.data[:14] == "story_games_0_")
 async def story_games(call):
-    if await ch().rules_checker(call.from_user.id, call) == True:
+    if await ch().rules_checker(call.from_user.id, call) == (True, False):
         await call.answer(text="Загрузка истории игр")
         if call.data[:14] == "story_topup_1_": #Для отображения всех
             msg_id = call.data[14:].lstrip("0")

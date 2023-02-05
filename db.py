@@ -47,6 +47,10 @@ class BotDB:
         self.cursor.execute("SELECT rules_acc FROM users WHERE user_id = %s", (user_id,))
         return self.cursor.fetchone()[0]
 
+    async def get_ban(self, user_id):
+        self.cursor.execute("SELECT ban FROM users WHERE user_id = %s", (user_id,))
+        return self.cursor.fetchone()[0]
+
     async def rules_accept(self, user_id):
         self.cursor.execute("UPDATE users SET rules_acc = True WHERE user_id = %s", (user_id,))
         return self.conn.commit()
@@ -242,6 +246,14 @@ class BotDB:
             accrued = row[3]
             done = row[4]
         return [int_pay, user_id, sum, accrued, done]
+
+    async def adm_check(self, user_id):
+        self.cursor.execute("SELECT id FROM admins WHERE adm = %s", (user_id,))
+        return bool(len(self.cursor.fetchall()))
+
+    async def adm_valid_check(self, user_id):
+        self.cursor.execute("SELECT valid FROM admins WHERE adm = %s", (user_id,))
+        return self.cursor.fetchone()[0]
 
     def close(self):
         self.conn.close()

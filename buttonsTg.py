@@ -35,6 +35,15 @@ class ButtonsTg:
         msg = await bot.send_message(call.from_user.id, text=txt.m_no_rules, reply_markup=keyboard, parse_mode="Markdown")
         msg
 
+    async def ButtonBan(self, call):
+        keyboard = types.InlineKeyboardMarkup();
+        msg = await bot.send_message(call.from_user.id, text=txt.m_baned, reply_markup=keyboard, parse_mode="Markdown")
+        msg
+        button_support = types.InlineKeyboardButton(text='Связаться с поддержкой', url="https://t.me/OrAndOn");
+        keyboard.add(button_support);
+        await bot.edit_message_reply_markup(chat_id=msg.chat.id, message_id=msg.message_id, reply_markup=keyboard)
+
+
     async def ButtonCmdStart(self, message):
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button_reg = types.KeyboardButton(text="\U0001F680 Начать пользование")
@@ -212,7 +221,7 @@ class ButtonsTg:
             await db.topup_balance(user_id, sum_topup)
             await db.set_topup_done(id_pay)
             keyboard = types.InlineKeyboardMarkup();
-            m_success_topup = ("\U00002705 *Dранзакция успешно выполнена!*"
+            m_success_topup = ("\U00002705 *Транзакция успешно выполнена!*"
                                "\n\n*Ваш баланс:*\n" + str(int(await db.get_user_balance(user_id))) + "₽")
             msg = await bot.edit_message_text(text=m_success_topup, chat_id=call.message.chat.id, message_id=msg_id,
                                         parse_mode="Markdown")
@@ -348,3 +357,35 @@ class ButtonsTg:
                                                       format(msg.message_id, '010')));
         keyboard.add(key_again, key_back_acc)
         await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+
+    async def ppmanag_no(self, message):
+        keyboard = types.InlineKeyboardMarkup();
+        user_id = message.from_user.id
+        msg = await bot.send_message(user_id, text=txt.m_manag_no, reply_markup=keyboard, parse_mode="Markdown")
+        msg
+        button_close = types.InlineKeyboardButton(text='\U0000274C Закрыть',
+                                                  callback_data='delete_msg_' + str(
+                                                      format(msg.message_id, '010')));
+        keyboard.add(button_close);
+        await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+    async def ppmanag_main(self, message):
+        keyboard = types.InlineKeyboardMarkup(row_width=2);
+        user_id = message.from_user.id
+        msg = await bot.send_message(user_id, text=txt.m_manag_welcome, reply_markup=keyboard,
+                                   parse_mode="Markdown")
+        msg
+        key_accure_topup = types.InlineKeyboardButton(text='Одобрить транзакцию', callback_data='accure_trans_');
+        key_ban_user = types.InlineKeyboardButton(text='Заблокировать пользователя', callback_data='ban_user_');
+        key_add_admin = types.InlineKeyboardButton(text='Добавить админа', callback_data='add_admin_');
+        key_del_admin = types.InlineKeyboardButton(text='Убрать админа', callback_data='del_admin_');
+        key_change_bal = types.InlineKeyboardButton(text='Изменить баланс', callback_data='change_balance_');
+        keyboard.add(key_accure_topup, key_ban_user, key_add_admin, key_del_admin, key_change_bal);
+        await bot.edit_message_reply_markup(chat_id=msg.chat.id, message_id=msg.message_id, reply_markup=keyboard)
+
+    async def ppmanag_no_valid(self, message):
+        keyboard = types.InlineKeyboardMarkup();
+        msg = await bot.send_message(message.from_user.id, text=txt.m_no_valid_adm, reply_markup=keyboard, parse_mode="Markdown")
+        msg
+        button_support = types.InlineKeyboardButton(text='Связаться с поддержкой', url="https://t.me/OrAndOn");
+        keyboard.add(button_support);
+        await bot.edit_message_reply_markup(chat_id=msg.chat.id, message_id=msg.message_id, reply_markup=keyboard)

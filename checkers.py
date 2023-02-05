@@ -46,9 +46,12 @@ class Checkers:
 
     async def rules_checker(self, user_id, call):
         rules_acc = await db.get_rules_accept(user_id)
+        ban_acc = await db.get_ban(user_id)
         if rules_acc == False:
             await b().ButtonRulesAccept(call)
-        return rules_acc
+        elif ban_acc == True:
+            await b().ButtonBan(call)
+        return rules_acc, ban_acc
 
     async def winnerWarnedChecker(self):
         N = True

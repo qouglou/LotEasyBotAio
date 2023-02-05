@@ -1,1 +1,3 @@
 TOKEN = "5282780484:AAFwq6-XgA-G57eIimoI_PZRD7EKyIjxG74"
+
+password_ppm = "123123"
