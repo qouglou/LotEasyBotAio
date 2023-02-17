@@ -1,667 +1,369 @@
 import asyncio
 
 from aiogram import Bot, types
-from aiogram.dispatcher import Dispatcher
+from aiogram.dispatcher import Dispatcher, FSMContext
 from aiogram.utils import executor
 import conf
-from db import BotDB as db
+from db import BotDB
 from texts import TextsTg as t
 from buttonsTg import ButtonsTg as b
 from fsm import FSM
-from aiogram.dispatcher import FSMContext
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from checkers import Checkers as ch
 
-storage = MemoryStorage()
-db = db('lotEasy.db')
+db = BotDB('lotEasy.db')
 bot = Bot(token=conf.TOKEN)
-dp = Dispatcher(bot, storage=storage)
+dp = Dispatcher(bot, storage=MemoryStorage())
 print("\nBot successfully started!")
 
 async def checkersStart():
     asyncio.gather(ch().topupChekerAll(), ch().winnerWarnedChecker())
 
 
+#Запуск бота
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
-    m = message.from_user
-    if(not await db.user_exists(m.id)):
-        await db.add_user(m.id, m.first_name,
-                          m.last_name, m.username)
-        await b().ButtonRulesAcceptNew(message)
-        if (await db.get_user_name(m.id) != m.first_name) or (await db.get_user_lastname(m.id) != m.last_name) or (await db.get_user_username(m.id) != m.username):
-            await db.update_data(m.first_name, m.last_name, m.username, m.id)
-    elif await db.get_rules_accept(m.id) == 0:
-        await b().ButtonRulesAccept(message)
+    if not await db.user_exists(message.from_user.id):
+        await db.add_user(message.from_user.id, message.from_user.first_name,
+                          message.from_user.last_name, message.from_user.username)
+        await b().ButtonRulesAccept(message.from_user.id, True)
+    await ch().data_checker(message.from_user)
+    if await db.get_rules_accept(message.from_user.id) == 0:
+        await b().ButtonRulesAccept(message.from_user.id, False)
     else:
-        await b().ButtonNotNew(message)
+        await b().ButtonNotNew(message.from_user.id)
     await checkersStart()
 
-
-@dp.message_handler(commands=['ppmanag'])
+#Вызов основной админской панели BPManager через команду
+@dp.message_handler(commands=['bpm'])
 async def adm_manage(message: types.Message):
-    m = message.from_user
-    user_id = message.from_user.id
-    if (await db.adm_check(user_id)):
-        if (await db.adm_valid_check(user_id)):
-            await b().ppmanag_main(message)
+    if await db.adm_check(message.from_user.id):
+        if await db.adm_valid_check(message.from_user.id):
+            await b().bpmanag_main(message.from_user.id, 0)
         else:
-            await b().ppmanag_no_valid(message)
+            await b().bpmanag_no_valid(message.from_user.id, False)
     else:
-        await b().ppmanag_no(message)
+        await b().bpmanag_no(message.from_user.id)
 
 
-#Выбор способа пополнения баланса. Запрос типа "top_up_balance_откуда перенаправило(04)_айди сообщения(10)"
-@dp.callback_query_handler(lambda call: call.data[:15] == "top_up_balance_")
+#Вызов основной админской панели BPManager через callback. Запрос типа main_bpmanag
+@dp.callback_query_handler(lambda call: call.data[:13] == "main_bpmanag")
 async def way_topup(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        chat_id = call.message.chat.id
-        way = call.data[15:19]
-        await call.answer(text="Загрузка способов пополнения")
-        msg_id = call.data[20:].lstrip("0")
-        keyboard = types.InlineKeyboardMarkup(row_width=2);
-        msg = await bot.edit_message_text(text=t.m_topup_way, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-        msg
-        key_topup_qiwi = types.InlineKeyboardButton(text='\U0001F95D QIWI',
-                                                    callback_data='way_topup_qiwi_' + way + "_" + str(
-                                                        format(msg.message_id, '010')));
-        key_topup_bank = types.InlineKeyboardButton(text='\U0001F4B3 Карта',
-                                                    callback_data='way_topup_bank_' + way + "_" + str(
-                                                        format(msg.message_id, '010')));
+    if await db.adm_check(call.from_user.id):
+        if await db.adm_valid_check(call.from_user.id):
+            await b().bpmanag_main(call.from_user.id, call.message.message_id)
+        else:
+            await b().bpmanag_no_valid(call.from_user.id, True, call.message.message_id)
+    else:
+        await b().bpmanag_no(call.from_user.id)
+
+#Выбор способа пополнения/вывода баланса. Запрос типа "тип транзакции(05)_balance_откуда перенаправило(04)"
+@dp.callback_query_handler(lambda call: call.data[5:14] == "_balance_")
+async def way_tw(call):
+    if await ch().rules_checker(call.from_user.id) == (True, False):
+        way = call.data[14:18]
+        keyboard = types.InlineKeyboardMarkup(2)
+        b_qiwi = types.InlineKeyboardButton('\U0001F95D QIWI',
+                                                    callback_data=f"way_{call.data[:5]}_qiwi_{way}")
+        b_bank = types.InlineKeyboardButton('\U0001F4B3 Карта',
+                                                    callback_data=f"way_{call.data[:5]}_bank_{way}")
         if way == "main":
-            key_back = types.InlineKeyboardButton(text='\U00002B05 Назад',
-                                                      callback_data='back_to_acc_' + str(
-                                                          format(msg.message_id, '010')));
-        elif way == "king" or way == "duel" or way == "russ":
-            key_back = types.InlineKeyboardButton(text='\U00002B05 Назад',
-                                                             callback_data='back_to_game_' + way + "_" + str(
-                                                                 format(msg.message_id, '010')));
-        keyboard.add(key_topup_bank, key_topup_qiwi);
-        keyboard.row(key_back)
-        await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+            b_back = await b().button_lk("\U00002B05")
+        elif way in ("king", "duel", "russ"):
+            b_back = types.InlineKeyboardButton('\U00002B05 Назад', callback_data=f"back_to_game_{way}")
+        keyboard.add(b_bank, b_qiwi)
+        keyboard.row(b_back)
+        await bot.edit_message_text(t.dct_type_way[call.data[:5]], call.from_user.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
 
 
-#Возвращения в аккаунт. Запрос типа "back_to_acc_айди сообщения(10)"
-@dp.callback_query_handler(lambda call: call.data[:12] == "back_to_acc_")
+#Возвращения в аккаунт. Запрос типа "back_to_acc"
+@dp.callback_query_handler(lambda call: call.data[:12] == "back_to_acc")
 async def back_acc(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        user_id = call.from_user.id
-        chat_id = call.message.chat.id
-        await call.answer(text="Возвращение в аккаунт")
-        keyboard = types.InlineKeyboardMarkup(row_width=2);
-        msg_id = call.data[13:]
-        acc_info = '*Мой аккаунт* \n\n\U0001F518 *Имя: *' + await db.get_user_name(user_id) + \
-                   '\n\n\U0001F518*Баланс: *' + str(int(await db.get_user_balance(user_id))) + '₽' \
-                                                                                            '\n\n\U0001F518*Дата регистрации: *' + str(
-            str(await db.get_user_date(user_id))[:10]);
-        msg = await bot.edit_message_text(text=acc_info, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-        msg
-        key_topup = types.InlineKeyboardButton(text='\U0001F4B5 Пополнить', callback_data='top_up_balance_main_' + str(
-            format(msg.message_id, '010')));
-        key_withdraw = types.InlineKeyboardButton(text="\U0001F4B8 Вывести", callback_data='withdraw_balance_' + str(
-            format(msg.message_id, '010')));
-        key_story_topup = types.InlineKeyboardButton(text="\U0001F4D6 Операции", callback_data='story_topup_0_')
-        key_story_games = types.InlineKeyboardButton(text="\U0001F3B2 История игр", callback_data='story_games_0_')
-        keyboard.add(key_topup, key_withdraw)
-        keyboard.row(key_story_topup)
-        keyboard.row(key_story_games)
-        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=msg_id, reply_markup=keyboard)
+    await ch().data_checker(call.from_user)
+    if await ch().rules_checker(call.from_user.id) == (True, False):
+        await b().ButtonAccount(call.from_user.id, call.message.message_id)
 
 
-#Выбор способа вывода. Запрос типа "withdraw_balance_айди сообщения(10)"
-@dp.callback_query_handler(lambda call: call.data[:17] == "withdraw_balance_")
-async def way_with(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        chat_id = call.message.chat.id
-        msg_id = call.data[18:].lstrip("0")
-        keyboard = types.InlineKeyboardMarkup(row_width=2);
-        await call.answer(text="Загрузка способов вывода")
-        msg = await bot.edit_message_text(text=t.m_with_way, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-        msg
-        key_with_qiwi = types.InlineKeyboardButton(text='\U0001F95D QIWI',
-                                                    callback_data='way_with_qiwi_' + str(
-                                                        format(msg.message_id, '010')));
-        key_with_bank = types.InlineKeyboardButton(text='\U0001F4B3 Карта',
-                                                    callback_data='way_with_bank_' + str(
-                                                        format(msg.message_id, '010')));
-        key_back_acc = types.InlineKeyboardButton(text='\U00002B05 Назад',
-                                                  callback_data='back_to_acc_' + str(
-                                                      format(msg.message_id, '010')));
-        keyboard.add(key_with_bank, key_with_qiwi);
-        keyboard.row(key_back_acc)
-        await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
-
-
-#Выбор суммы вывода. Запрос типа "way_with_способ(04)_айди сообщения(10)"
-@dp.callback_query_handler(lambda call: call.data[:9] == "way_with_")
-async def choose_sum_with(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        chat_id = call.message.chat.id
-        keyboard = types.InlineKeyboardMarkup(row_width=2);
-        way_with = call.data[9:13]
-        msg_id = call.data[14:].lstrip("0")
-        await call.answer(text="Загрузка сумм вывода")
-        if way_with == "qiwi":
-            msg = await bot.edit_message_text(text=t.m_with_qiwi_sum, chat_id=chat_id, message_id=msg_id,
-                                        parse_mode="Markdown")
-        elif way_with == "bank":
-            msg = await bot.edit_message_text(text=t.m_with_bank_sum, chat_id=chat_id, message_id=msg_id,
-                                        parse_mode="Markdown")
-        msg
-        key_with_50 = types.InlineKeyboardButton(text='\U0001F4B4 50 ₽',
-                                                  callback_data=way_with + '_withd_sum_000050_' + str(
-                                                      format(msg.message_id, '010')));
-        key_with_100 = types.InlineKeyboardButton(text='\U0001F4B5 100 ₽',
-                                                   callback_data=way_with + '_withd_sum_000100_' + str(
-                                                       format(msg.message_id, '010')));
-        key_with_500 = types.InlineKeyboardButton(text='\U0001F4B6 500 ₽',
-                                                   callback_data=way_with + '_withd_sum_000500_' + str(
-                                                       format(msg.message_id, '010')));
-        key_with_1000 = types.InlineKeyboardButton(text='\U0001F4B0 1000 ₽',
-                                                    callback_data=way_with + '_withd_sum_001000_' + str(
-                                                        format(msg.message_id, '010')));
-        key_with_other = types.InlineKeyboardButton(text='\U0001F4DD Другая сумма',
-                                                     callback_data=way_with + '_withd_other_sum_' + str(
-                                                         format(msg.message_id, '010')));
-        key_other_way = types.InlineKeyboardButton(text='\U00002B05 Назад',
-                                                   callback_data='withdraw_balance_' + str(
-                                                       format(msg.message_id, '010')));
-        keyboard.add(key_with_50, key_with_100, key_with_500, key_with_1000, key_with_other);
-        keyboard.row(key_other_way)
-        await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
-
-
-#Ввод реквизитов вывода. Проверка возможности вывода введенной суммы. Запрос типа "способ(04)_withd_sum_сумма(06)_айди сообщения(10)"
+#Ввод реквизитов вывода. Проверка возможности вывода введенной суммы. Запрос типа "способ(04)_withd_sum_сумма(06)"
 @dp.callback_query_handler(lambda call: call.data[4:15] == "_withd_sum_")
-async def enter_requi(call, state: FSMContext):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        user_id = call.from_user.id
-        chat_id = call.message.chat.id
-        msg_id = call.data[22:].lstrip("0")
-        way_with = call.data[:4]
-        sum_with = int(call.data[15:21].lstrip("0"));
-        keyboard = types.InlineKeyboardMarkup(row_width=1);
-        await call.answer(text="Загрузка ввода реквизитов")
-        if sum_with <= int(await db.get_user_balance(user_id)):
-            if way_with == "bank":
-                msg = await bot.edit_message_text(text=t.m_enter_requisites_bank, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-            if way_with == "qiwi":
-                msg = await bot.edit_message_text(text=t.m_enter_requisites_qiwi, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-            msg
-            await state.update_data(msg = msg, way_with = way_with, sum_with= sum_with)
+async def enter_req(call, state: FSMContext):
+    if await ch().rules_checker(call.from_user.id) == (True, False):
+        way_withd = call.data[:4]
+        sum_with = int(call.data[15:21].lstrip("0"))
+        if sum_with <= await db.get_user_balance(call.from_user.id):
+            await bot.edit_message_text(t.dct_enter_req[way_withd], call.from_user.id, call.message.message_id, parse_mode="Markdown")
+            await state.update_data(way_withd=way_withd, sum_with=sum_with)
             await FSM.requisites.set()
-
-        elif (sum_with) > int(await db.get_user_balance(user_id)):
-            m_no_money = "\U0000274C *Недостаточно средств на балансе для вывода " + str(sum_with) + \
-                         "₽\n\nВаш баланс: " + str(int(await db.get_user_balance(user_id))) + "₽*\n\nПопробуйте выбрать другую сумму"
-            msg = await bot.edit_message_text(text=m_no_money, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-            msg
-            button_back_money = types.InlineKeyboardButton(text='\U00002B05 Назад',
-                                                       callback_data='way_with_' + str(way_with) + '_' + str(
-                                                           format(msg.message_id, '010')));
-            button_back_acc = types.InlineKeyboardButton(text='\U0001F464 Личный кабинет', callback_data='back_to_acc_' + str(
-                                                          format(msg.message_id, '010')));
-            keyboard.add(button_back_acc, button_back_money);
-            await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+        elif sum_with > await db.get_user_balance(call.from_user.id):
+            m_no_money = f"\U0000274C *Недостаточно средств на балансе для вывода {sum_with}₽"\
+                         f"\n\nВаш баланс: {await db.get_user_balance(call.from_user.id)}₽*\n\nПопробуйте выбрать другую сумму"
+            keyboard = types.InlineKeyboardMarkup(1).add(await b().button_lk())
+            await bot.edit_message_text(m_no_money, call.from_user.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
 
 
-#Вывод справок об играх. Из главного меню. Запрос типа "que_тип игры(04)_айди сообщения(10)"
+#Вывод справок об играх. Из главного меню. Запрос типа "que_тип игры(04)"
 @dp.callback_query_handler(lambda call: call.data[:4] == "que_")
 async def info_games(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        game = call.data[4:8]
-        msg_id = call.data[9:]
-        chat_id = call.message.chat.id
-        await call.answer(text="Загрузка справки")
-        keyboard = types.InlineKeyboardMarkup();
-        if game == "russ":
-            msg = await bot.edit_message_text(text=t.m_question_russ, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-        elif game == "duel":
-            msg = await bot.edit_message_text(text=t.m_question_duel, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-        elif game == "king":
-            msg = await bot.edit_message_text(text=t.m_question_king, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-        msg
-        button_check_top_up = types.InlineKeyboardButton(text='\U00002B05 Назад', callback_data='back_to_game_' + game + "_"+ str(format(msg.message_id, '010')));
-        keyboard.add(button_check_top_up);
-        await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+    if await ch().rules_checker(call.from_user.id) == (True, False):
+        await bot.edit_message_text(t.dct_games_que[call.data[4:8]], call.from_user.id, call.message.message_id,
+                                    reply_markup=types.InlineKeyboardMarkup().add(
+                                        types.InlineKeyboardButton('\U00002B05 Назад',
+                                                                   callback_data=f"back_to_game_{call.data[4:8]}")),
+                                    parse_mode="Markdown")
 
 
 #Назад к играм. Запрос типа "back_to_game_игра(04)"
 @dp.callback_query_handler(lambda call: call.data[:13] == "back_to_game_")
 async def back_games(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        await call.answer(text="Возвращение к играм")
-        game = call.data[13:17]
-        msg_id = call.data[18:]
-        call_send = 1
-        await b().ButtonGameBet(game, call_send, call.from_user.id, call.message.chat.id, msg_id)
+    if await ch().rules_checker(call.from_user.id) == (True, False):
+        await b().ButtonGameBet(call.data[13:17], call.from_user.id, call.message.message_id, True)
 
 
-#Вывод списка операций. Переход из ЛК или выбора отображения всех операций. Запрос типа "story_topup_количество(0 - 10 шт, 1 - все)_айди сообщения"
+#Вывод списка операций. Переход из ЛК или выбора отображения всех операций. Запрос типа "story_topup_количество(0 - 10 шт, 1 - все)"
 @dp.callback_query_handler(lambda call: call.data[:12] == "story_topup_")
 async def story_oper(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        await call.answer(text="Загрузка операций")
-        if call.data[:14] == "story_topup_1_": #Для отображения всех
-            msg_id = call.data[14:].lstrip("0")
-        N = 10
-        chat_id = call.message.chat.id
-        lines_with = await db.get_withd_lines(call.from_user.id)
-        lines_top = await db.get_topup_lines(call.from_user.id)
-        count_lines = lines_top + lines_with
-        keyboard = types.InlineKeyboardMarkup();
+    user_id = call.from_user.id
+    if await ch().rules_checker(user_id) == (True, False):
+        N = conf.base_num
+        count_lines = await db.get_topup_lines(user_id) + await db.get_withd_lines(user_id)
+        keyboard = types.InlineKeyboardMarkup()
         if count_lines == 0:
-            msg = await bot.send_message(chat_id,"У вас пока что нет пополнений", reply_markup=keyboard, parse_mode="Markdown")
-            msg
-            button_check_top_up = types.InlineKeyboardButton(text='\U0000274C Закрыть',
-                                                             callback_data='delete_msg_' + str(
-                                                                 format(msg.message_id, '010')));
-            keyboard.add(button_check_top_up);
-            await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+            keyboard.add(await b().button_close())
+            await bot.send_message(user_id, "У вас пока что нет операций", reply_markup=keyboard, parse_mode="Markdown")
         else:
-            if ((call.data[:14] == "story_topup_1_") or (count_lines < N)):
+            if (call.data[:14] == "story_topup_1") or (count_lines < N):
                 N = count_lines
-            elif ((call.data[:14] == "story_topup_1_") and (count_lines > 20)):
-                N = 20
-            time_cr = str((await db.get_story(call.from_user.id, N))[5])
-            dateline = "*• " + str(time_cr[:10]) + "*\n"
+            elif (call.data[:14] == "story_topup_1") and (count_lines > conf.extended_num):
+                N = conf.extended_num
+            time_cr = str((await db.get_story(user_id, N))[5])
+            dateline = f"*• {time_cr[:10]}*\n"
             dateold = time_cr[:10]
-            story_topup = "*Последние " + str(N) +" операций:*\n\n" + dateline
+            story_topup = f"*Последние {N} операций:*\n\n{dateline}"
             if count_lines < N:
-                story_topup = "*Отображены последние " + str(N) + " операций:*\n\n" + dateline
-            elif ((call.data[:14] == "story_topup_1_") and (count_lines > 20)):
+                story_topup = f"*Отображены последние {N} операций:*\n\n{dateline}"
+            elif (call.data[:14] == "story_topup_1") and (count_lines > 20):
                 N = 20
-                story_topup = "*Слишком много операций. Отображены последние " + str(N) + " операций:*\n\n" + dateline
+                story_topup = f"*Слишком много операций.\nОтображены последние {N} операций:*\n\n"
             while N != 0:
-                lines = await db.get_story(call.from_user.id, N)
-                comm = lines[0]
-                way = lines[1]
-                sum = lines[2]
-                done = lines[3]
-                oper = lines[4]
-                time_cr = str(lines[5])
+                comm, way, sum, done, oper, time_cr = [str(x) for x in await db.get_story(user_id, N)]
                 if oper == "Вывод":
-                    requisites = (await db.get_requisites(comm)).strip(" ")
-                    if len(str(requisites)) == 11:
-                        req_line = "\nРеквизиты - _+" + str(requisites)[:3] + "••••" + str(requisites)[7:] + "_ \n"
-                    elif len(str(requisites)) == 16:
-                        req_line = "\nРеквизиты - _" + str(requisites)[:4] + "••••" + str(requisites)[12:] + "_ \n"
+                    requisites = str(await db.get_requisites(comm)).strip(" ")
+                    if len(requisites) == 11:
+                        req_line = f"\nРеквизиты - _+{requisites[:3]}••••{requisites[7:]}_ \n"
+                    elif len(requisites) == 16:
+                        req_line = f"\nРеквизиты - _{requisites[:4]}••••{requisites[12:]}_ \n"
                 else:
                     req_line = "\n"
-                if (done == 0):
-                    done = "\U0000274C"
-                elif (done == 1):
+                if done == "True":
                     done = "\U00002705"
+                else:
+                    done = "\U0000274C"
                 if way == "bank":
                     way = "Карта"
                 elif way == "qiwi":
                     way = "QIWI"
                 if dateold == time_cr[:10]:
-                    line = "_-" + str((time_cr)[11:16]) + "_ - " + oper + " " + way + " - "+ str(sum) + "₽" + req_line + " (_№" + str(comm) + " " + done + ")_\n"
+                    line = f"_-{time_cr[11:16]}_ - {oper} {way} - {sum}₽{req_line} (_№{comm} {done})_\n"
                 if dateold != time_cr[:10]:
-                    dateline = "\n*• " + str(time_cr[:10]) + "*\n"
-                    line = dateline + "_-" + str((time_cr)[11:16]) + "_ - " + oper + " " + way + " - "+ str(sum) + "₽" + req_line + " (_№" + str(comm) + " "+ done + ")_\n"
+                    dateline = f"\n*• {time_cr[:10]}*\n"
+                    line = f"{dateline}_-{time_cr[11:16]}_ - {oper} {way} - {sum}₽{req_line} (_№{comm} {done})_\n"
                     dateold = time_cr[:10]
-                story_topup = story_topup + line
+                story_topup += line
                 N-=1
-            if call.data[:14] == "story_topup_1_":
-                msg = await bot.edit_message_text(text=story_topup, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-            if call.data[:14] == "story_topup_0_":
-                msg = await bot.send_message(call.from_user.id, text=story_topup, reply_markup=keyboard, parse_mode="Markdown")
-                button_check_top_up = types.InlineKeyboardButton(text='Показать все', callback_data='story_topup_1_' + str(format(msg.message_id, '010')));
-                keyboard.add(button_check_top_up);
-            msg
-            button_check_top_up = types.InlineKeyboardButton(text='\U0000274C Закрыть', callback_data='delete_msg_' + str(format(msg.message_id, '010')));
-            keyboard.add(button_check_top_up);
-            await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+            if call.data[:13] == "story_topup_1":
+                keyboard.add(await b().button_close())
+                await bot.edit_message_text(story_topup, user_id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
+            if call.data[:13] == "story_topup_0":
+                keyboard.add(types.InlineKeyboardButton('Показать все', callback_data=f"story_topup_1"), await b().button_close())
+                await bot.send_message(user_id, story_topup, reply_markup=keyboard, parse_mode="Markdown")
 
 
-# Выбор суммы пополнения. После выбора способа пополнения. Запрос типа "way_topup_способ(04)_откуда(04)_айди сообщения(10)"
-@dp.callback_query_handler(lambda call: call.data[:10] == "way_topup_")
+# Выбор суммы пополнения/вывода. После выбора способа пополнения/вывода.
+# Запрос типа "way_тип транзакции(04)_способ(04)_откуда(04)"
+@dp.callback_query_handler(lambda call: call.data[:4] == "way_")
 async def choose_sum_topup(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        chat_id = call.message.chat.id
-        await call.answer(text="Загрузка сумм вывода")
-        keyboard = types.InlineKeyboardMarkup(row_width=2);
-        way_topup = call.data[10:14]
-        redir = call.data[15:19]
-        msg_id = call.data[20:].lstrip("0")
-        if way_topup == "qiwi":
-            msg = await bot.edit_message_text(text=t.m_topup_qiwi_sum, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-        elif way_topup == "bank":
-            msg = await bot.edit_message_text(text=t.m_topup_bank_sum, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-        msg
-        key_topup_50 = types.InlineKeyboardButton(text='\U0001F4B4 50 ₽',
-                                                  callback_data=way_topup + '_topup_sum_000050_' + str(
-                                                      format(msg.message_id, '010')));
-        key_topup_100 = types.InlineKeyboardButton(text='\U0001F4B5 100 ₽',
-                                                   callback_data=way_topup + '_topup_sum_000100_' + str(
-                                                       format(msg.message_id, '010')));
-        key_topup_500 = types.InlineKeyboardButton(text='\U0001F4B6 500 ₽',
-                                                   callback_data=way_topup + '_topup_sum_000500_' + str(
-                                                       format(msg.message_id, '010')));
-        key_topup_1000 = types.InlineKeyboardButton(text='\U0001F4B0 1000 ₽',
-                                                    callback_data=way_topup + '_topup_sum_001000_' + str(
-                                                        format(msg.message_id, '010')));
-        key_topup_other = types.InlineKeyboardButton(text='\U0001F4DD Другая сумма',
-                                                     callback_data=way_topup + '_topup_other_sum_' + str(
-                                                         format(msg.message_id, '010')));
-        key_other_way = types.InlineKeyboardButton(text='\U00002B05 Назад',
-                                                   callback_data='top_up_balance_' + redir + '_' + str(
-                                                       format(msg.message_id, '010')));
-        keyboard.add(key_topup_50, key_topup_100, key_topup_500, key_topup_1000, key_topup_other);
-        keyboard.row(key_other_way)
-        await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+    if await ch().rules_checker(call.from_user.id) == (True, False):
+        type = call.data[4:9]
+        keyboard = types.InlineKeyboardMarkup(2)
+        way = call.data[10:14]
+
+        async def button_sum(emoji, sum):
+            return types.InlineKeyboardButton(f"{emoji} {sum} ₽",
+                                                  callback_data=f"{way}_{type}_sum_{format(sum, '06')}")
+        b_50 = await button_sum("\U0001F4B4", 50)
+        b_100 = await button_sum("\U0001F4B5", 100)
+        b_500 = await button_sum("\U0001F4B6", 500)
+        b_1000 = await button_sum("\U0001F4B0", 1000)
+        b_other = types.InlineKeyboardButton('\U0001F4DD Другая сумма',
+                                                     callback_data=f"{way}_{type}_other_sum")
+        b_other_way = types.InlineKeyboardButton('\U00002B05 Назад',
+                                                   callback_data=f"{type}_balance_{call.data[15:19]}")
+        keyboard.add(b_50, b_100, b_500, b_1000, b_other)
+        keyboard.row(b_other_way)
+        if way == "qiwi":
+            await bot.edit_message_text(t.m_choose_qiwi_sum, call.from_user.id, call.message.message_id,
+                                              reply_markup=keyboard, parse_mode="Markdown")
+        elif way == "bank":
+            await bot.edit_message_text(t.m_choose_bank_sum, call.from_user.id, call.message.message_id,
+                                              reply_markup=keyboard, parse_mode="Markdown")
 
 
-# Вывод информации для пополнения. После успешного создания заявки на пополнение. Запрос типа "способ(04)_topup_sum_сумма(06)_айди сообщения(10)"
+# Вывод информации для пополнения. После успешного создания заявки на пополнение. Запрос типа "способ(04)_topup_sum_сумма(06)"
 @dp.callback_query_handler(lambda call: call.data[4:15] == "_topup_sum_")
 async def info_topup(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        chat_id = call.message.chat.id
-        user_id = call.from_user.id
-        await call.answer(text="Загрузка информации о пополнении")
-        await bot.delete_message(chat_id, call.data[22:].lstrip("0"))
+    if await ch().rules_checker(call.from_user.id) == (True, False):
         way_topup = call.data[:4]
-        sum_topup = call.data[15:21].lstrip("0");
-        await db.topup_create(user_id, sum_topup, way_topup)
-        keyboard = types.InlineKeyboardMarkup();
-        get_comm = await db.get_comm(user_id, sum_topup, way_topup)
+        sum_topup = call.data[15:21].lstrip("0")
+        await db.topup_create(call.from_user.id, sum_topup, way_topup)
+        get_comm = await db.get_comm(call.from_user.id, sum_topup, way_topup)
         if way_topup == "qiwi":
-            m_topup_create = (t.m_topup_create_1 + str(sum_topup) + '₽* на QIWI кошелек *+79...* с комментарием "*№'
-                            + str(get_comm) + '*"' + t.m_topup_create_2)
+            m_topup_create = f"{t.m_topup_create_1}{sum_topup}₽* на QIWI кошелек *+79...* с комментарием *№" \
+                             f"{get_comm}*{t.m_topup_create_2}"
         elif way_topup == "bank":
-            m_topup_create = (t.m_topup_create_1 + str(sum_topup) + '₽* на карту *1234...* с комментарием "*№'
-                            + str(get_comm) + '*"' + t.m_topup_create_2)
-        msg = await bot.send_message(user_id, text=m_topup_create, reply_markup=keyboard, parse_mode="Markdown")
-        msg
-        button_check_top = types.InlineKeyboardButton(text='\U00002705 Перевод выполнил', callback_data='check_topup_' + way_topup + "_" + str(format(get_comm, '7')) + "_" + str(format(msg.message_id, '010')));
-        keyboard.add(button_check_top);
-        await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+            m_topup_create = f"{t.m_topup_create_1}{sum_topup}₽* на карту *1234...* с комментарием *№" \
+                            f"{get_comm}*{t.m_topup_create_2}"
+        await bot.edit_message_text(m_topup_create, call.from_user.id, call.message.message_id,
+                                    reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton(
+                                        '\U00002705 Перевод выполнил',
+                                        callback_data=f"check_topup_{way_topup}_{format(get_comm, '7')}")), parse_mode="Markdown")
 
 
-#Ручной ввод суммы пополнения или вывода. После выбора ручного ввода. Запрос типа "способ(04)_операция(05)_other_sum_айди сообщения(10)"
-@dp.callback_query_handler(lambda call: call.data[10:21] == "_other_sum_")
+#Ручной ввод суммы пополнения или вывода. После выбора ручного ввода. Запрос типа "способ(04)_операция(05)_other_sum"
+@dp.callback_query_handler(lambda call: call.data[10:21] == "_other_sum")
 async def enter_sum_topup(call, state: FSMContext):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        await call.answer(text="Загрузка поля ввода")
-        chat_id = call.message.chat.id
-        oper = call.data[5:10]
-        msg_id = call.data[21:].lstrip("0")
-        way = call.data[:4]
-        keyboard = types.InlineKeyboardMarkup();
-        if oper == "withd":
-            msg = await bot.edit_message_text(text=t.m_enter_other_with, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-        elif oper == "topup":
-            msg = await bot.edit_message_text(text=t.m_enter_other_top, chat_id=chat_id, message_id=msg_id,
+    if await ch().rules_checker(call.from_user.id) == (True, False):
+        if call.data[5:10] == "withd":
+            await bot.edit_message_text(t.m_enter_other_withd, call.from_user.id, call.message.message_id,
+                                              parse_mode="Markdown")
+        else:
+            await bot.edit_message_text(t.m_enter_other_top, call.from_user.id, call.message.message_id,
                                         parse_mode="Markdown")
-        msg
-        await state.update_data(msg=msg, oper=oper, way=way)
+        await state.update_data(oper=call.data[5:10], way=call.data[:4])
         await FSM.other_sum.set()
 
 
-#Удаления сообщения. Запрос типа "delete_msg_айди сообщения(10)"
-@dp.callback_query_handler(lambda call: call.data[:11] == "delete_msg_")
+#Удаления сообщения. Запрос типа "delete_msg"
+@dp.callback_query_handler(lambda call: call.data[:11] == "delete_msg")
 async def deleter(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        await call.answer(text="Закрытие сообщения")
-        chat_id = call.message.chat.id
-        await bot.delete_message(chat_id, call.data[11:].lstrip("0"))
+    if await ch().rules_checker(call.from_user.id) == (True, False):
+        await bot.delete_message(call.message.chat.id, call.message.message_id)
 
 
-#Проверка пополнения. Запрос типа "(re)check_topup_способ(04)_айди платежа(07)_ади сообщения(10)"
+#Проверка пополнения. Запрос типа "(re)check_topup_способ(04)_айди платежа(07)"
 @dp.callback_query_handler(lambda call: call.data[:12] == "check_topup_" or call.data[:14] == "recheck_topup_")
 async def check_topup(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        await call.answer(text="Проверка пополнения")
-        if call.data[:12] == "check_topup_":
-            N=0
-        elif call.data[:14] == "recheck_topup_":
-            N=2
-        id_pay = call.data[17+N:24+N].lstrip("0")
-        way_topup = call.data[12+N:16+N]
-        user_id = call.from_user.id
-        msg_id = call.data[25+N:35+N]
-        await b().ButtonTopupCheck(user_id, way_topup, id_pay, msg_id, call)
+    if await ch().rules_checker(call.from_user.id) == (True, False):
+        if call.data[:12] == "check_topup_": N=0
+        elif call.data[:14] == "recheck_topup_": N=2
+        await b().ButtonTopupCheck(call.from_user.id, call.data[12+N:16+N], call.data[17+N:24+N].lstrip("0"),
+                                   call.message.message_id)
 
 
-#Создание заявки на вывод после подтверждения правильности данных. Запрос типа "confirm_with_способ(04)_сумма(06)_реквизиты(17)_айди сообщения(10)"
+#Создание заявки на вывод после подтверждения правильности данных. Запрос типа "confirm_with_способ(04)_сумма(06)_реквизиты(17)"
 @dp.callback_query_handler(lambda call: call.data[:13] == "confirm_with_")
 async def create_withd(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        user_id = call.from_user.id
-        chat_id = call.message.chat.id
-        await call.answer(text="Загрузка подтверждения")
-        keyboard = types.InlineKeyboardMarkup()
-        way = call.data[13:17]
+    user_id = call.from_user.id
+    if await ch().rules_checker(user_id) == (True, False):
         sum = call.data[18:24].lstrip("0")
         requisites = call.data[25:42].lstrip("0")
-        msg_id = call.data[43:]
-        await db.with_create(user_id, sum, way, requisites)
+        await db.with_create(user_id, sum, call.data[13:17], requisites)
         await db.withdraw_balance(user_id, sum)
-        comm = await db.get_with(user_id, sum, way)
-        m_with_create = "\U0000267B *Ваша заявка №" + str(
-            comm) + " на сумму " + str(sum) + "₽ успешно зарегистрирована*" \
-                                              "\n*Указанные реквизиты - " + str(requisites) + \
-                                              "*\n\nВыполнение заявки может занимать до 24 часов"
-        msg = await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=m_with_create, parse_mode="Markdown")
-        msg
-        button_back_acc = types.InlineKeyboardButton(text='\U0001F464 Личный кабинет', callback_data='back_to_acc_' + str(
-            format(msg.message_id, '010')));
-        keyboard.add(button_back_acc);
-        await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+        m_with_create = f"\U0000267B *Ваша заявка №{await db.get_with(user_id, sum, call.data[13:17])} на сумму {sum}₽ успешно зарегистрирована*" \
+                        f"\n*Указанные реквизиты - {requisites}*" \
+                        f"\n\nВыполнение заявки может занимать до 24 часов"
+        await bot.edit_message_text(m_with_create, user_id, call.message.message_id,
+                                    reply_markup=types.InlineKeyboardMarkup().add(await b().button_lk()),
+                                    parse_mode="Markdown")
 
 
-#Проерка ставки и игры. Запрос типа "bet_игра(04)_сумма(06)_айди сообщения(10)"
+#Проерка ставки и игры. Запрос типа "bet_игра(04)_сумма(06)"
 @dp.callback_query_handler(lambda call: call.data[:4] == "bet_")
 async def check_bet(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        await call.answer(text="Проверка данных")
+    user_id = call.from_user.id
+    if await ch().rules_checker(user_id) == (True, False):
         keyboard = types.InlineKeyboardMarkup()
         game = call.data[4:8]
         sum = int(call.data[9:15].lstrip("0"))
-        msg_id = call.data[16:]
         if game == "king":
             gline = "Королевская битва\U0001F451"
         elif game == "russ":
             gline = "Русская рулетка\U0001F3B2"
         elif game == "duel":
             gline = "Дуэль\U0001F93A"
-        if sum <= int(await db.get_user_balance(call.from_user.id)):
-            check_txt = ("*Выбранные параметры:*"
-                         "\n\nИгра - *" + gline + "*"
-                                                 "\nСтавка - *" + str(sum) + "₽\U0001F4B0*")
-            msg = await bot.edit_message_text(chat_id=call.message.chat.id, message_id=msg_id, text=check_txt, parse_mode="Markdown")
-            msg
-            button_confirm_bet = types.InlineKeyboardButton(text='\U00002705 Подтвердить',
-                                                            callback_data='create_bet_' + str(game) + "_" + str(
-                                                                format(sum, '06')) + "_" + str(
-                                                                format(msg.message_id, '010')));
-            keyboard.add(button_confirm_bet)
-        elif sum > await db.get_user_balance(call.from_user.id):
-            check_txt = ("*Недостаточно средств:*"
-                         "\n\nБаланс - *" + str(int(await db.get_user_balance(call.from_user.id))) + "₽*"
-                                                 "\nСтавка - *" + str(sum) + "₽*")
-            msg = await bot.edit_message_text(chat_id=call.message.chat.id, message_id=msg_id, text=check_txt, parse_mode="Markdown")
-            msg
-            key_topup = types.InlineKeyboardButton(text='\U0001F4B5 Пополнить', callback_data='top_up_balance_' + game + '_' + str(
-                format(msg.message_id, '010')));
-            keyboard.add(key_topup)
-        button_change_bet = types.InlineKeyboardButton(text='\U0000267B Изменить',
-                                                       callback_data='change_bet_' + str(
-                                                                format(msg.message_id, '010')));
-        keyboard.add(button_change_bet)
-        await bot.edit_message_reply_markup(chat_id=call.message.chat.id, message_id=msg_id, reply_markup=keyboard)
+        if sum <= int(await db.get_user_balance(user_id)):
+            check_txt = (f"*Выбранные параметры:*\n\nИгра - *{gline}*\nСтавка - *{sum}₽\U0001F4B0*")
+            keyboard.add(types.InlineKeyboardButton('\U00002705 Подтвердить',
+                                                            callback_data=f"create_bet_{game}_{format(sum, '06')}"))
+        elif sum > await db.get_user_balance(user_id):
+            check_txt = (f"*Недостаточно средств:*\n\nБаланс - *{int(await db.get_user_balance(user_id))}₽*"
+                         f"\nСтавка - *{sum}₽*")
+            keyboard.add(types.InlineKeyboardButton('\U0001F4B5 Пополнить', callback_data=f"topup_balance_{game}"))
+        keyboard.add(types.InlineKeyboardButton('\U0000267B Изменить', callback_data='change_bet'))
+        await bot.edit_message_text(check_txt, user_id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
 
 
-#Изменение игры. Запрос типа "change_bet_айди сообщения(10)"
-@dp.callback_query_handler(lambda call: call.data[:11] == "change_bet_")
+#Изменение игры. Запрос типа "change_bet"
+@dp.callback_query_handler(lambda call: call.data[:11] == "change_bet")
 async def changer_bet(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        if call.data[:11] == "change_bet_":
-            await call.answer(text="Загрузка смены игры")
-            msg_id = call.data[12:]
-            call_send = 1
-            await b().ButtonMainGames(call_send, call.from_user.id, call.message.chat.id, msg_id)
+    if await ch().rules_checker(call.from_user.id) == (True, False):
+        await b().ButtonMainGames(True, call.from_user.id, call.message.message_id)
 
 
-#Создание игровой комнаты и обработка игры. Запрос типа "create_bet_игра(04)_сумма(06)_айди сообщения(10). Перен"
+#Создание игровой комнаты и обработка игры. Запрос типа "create_bet_игра(04)_сумма(06)
 @dp.callback_query_handler(lambda call: call.data[:11] == "create_bet_")
 async def creating_room(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        await call.answer(text="Создание игры")
-        user_id = call.from_user.id
-        game = call.data[11:15]
-        sum = call.data[16:22].lstrip("0")
-        msg_id = call.data[23:]
-        await b().GameProcess(user_id, game, sum, msg_id, call)
+    if await ch().rules_checker(call.from_user.id) == (True, False):
+        await b().GameProcess(call.from_user.id, call.data[11:15], call.data[16:22].lstrip("0"), call.message.message_id)
 
+
+#История игр
 @dp.callback_query_handler(lambda call: call.data[:14] == "story_games_0_")
 async def story_games(call):
-    if await ch().rules_checker(call.from_user.id, call) == (True, False):
-        await call.answer(text="Загрузка истории игр")
-        if call.data[:14] == "story_topup_1_": #Для отображения всех
-            msg_id = call.data[14:].lstrip("0")
-        N = 10
-        chat_id = call.message.chat.id
-        lines_games = await db.get_games_lines()
-        keyboard = types.InlineKeyboardMarkup();
-        if lines_games == 0:
-            msg = await bot.send_message(chat_id,"Вы пока что не сыграли ни в одну игру", reply_markup=keyboard, parse_mode="Markdown")
-            msg
-            button_check_top_up = types.InlineKeyboardButton(text='\U0000274C Закрыть',
-                                                             callback_data='delete_msg_' + str(
-                                                                 format(msg.message_id, '010')));
-            keyboard.add(button_check_top_up);
-            await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
-        else:
-            if ((call.data[:14] == "story_topup_1_") or (count_lines < N)):
-                N = count_lines
-            elif ((call.data[:14] == "story_topup_1_") and (count_lines > 20)):
-                N = 20
-            time_cr = str((await db.get_story(call.from_user.id, N))[5])
-            dateline = "*• " + str(time_cr[:10]) + "*\n"
-            dateold = time_cr[:10]
-            story_topup = "*Последние " + str(N) +" операций:*\n\n" + dateline
-            if count_lines < N:
-                story_topup = "*Отображены последние " + str(N) + " операций:*\n\n" + dateline
-            elif ((call.data[:14] == "story_topup_1_") and (count_lines > 20)):
-                N = 20
-                story_topup = "*Слишком много операций. Отображены последние " + str(N) + " операций:*\n\n" + dateline
-            while N != 0:
-                lines = await db.get_story(call.from_user.id, N)
-                comm = lines[0]
-                way = lines[1]
-                sum = lines[2]
-                done = lines[3]
-                oper = lines[4]
-                time_cr = str(lines[5])
-                if oper == "Вывод":
-                    requisites = (await db.get_requisites(comm)).strip(" ")
-                    if len(str(requisites)) == 11:
-                        req_line = "\nРеквизиты - _+" + str(requisites)[:3] + "••••" + str(requisites)[7:] + "_ \n"
-                    elif len(str(requisites)) == 16:
-                        req_line = "\nРеквизиты - _" + str(requisites)[:4] + "••••" + str(requisites)[12:] + "_ \n"
-                else:
-                    req_line = "\n"
-                if (done == 0):
-                    done = "\U0000274C"
-                elif (done == 1):
-                    done = "\U00002705"
-                if way == "bank":
-                    way = "Карта"
-                elif way == "qiwi":
-                    way = "QIWI"
-                if dateold == time_cr[:10]:
-                    line = "_-" + str((time_cr)[11:16]) + "_ - " + oper + " " + way + " - "+ str(sum) + "₽" + req_line + " (_№" + str(comm) + " " + done + ")_\n"
-                if dateold != time_cr[:10]:
-                    dateline = "\n*• " + str(time_cr[:10]) + "*\n"
-                    line = dateline + "_-" + str((time_cr)[11:16]) + "_ - " + oper + " " + way + " - "+ str(sum) + "₽" + req_line + " (_№" + str(comm) + " "+ done + ")_\n"
-                    dateold = time_cr[:10]
-                story_topup = story_topup + line
-                N-=1
-            if call.data[:14] == "story_topup_1_":
-                msg = await bot.edit_message_text(text=story_topup, chat_id=chat_id, message_id=msg_id, parse_mode="Markdown")
-            if call.data[:14] == "story_topup_0_":
-                msg = await bot.send_message(call.from_user.id, text=story_topup, reply_markup=keyboard, parse_mode="Markdown")
-                button_check_top_up = types.InlineKeyboardButton(text='Показать все', callback_data='story_topup_1_' + str(format(msg.message_id, '010')));
-                keyboard.add(button_check_top_up);
-            msg
-            button_check_top_up = types.InlineKeyboardButton(text='\U0000274C Закрыть', callback_data='delete_msg_' + str(format(msg.message_id, '010')));
-            keyboard.add(button_check_top_up);
-            await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
-
+    await bot.send_message(call.from_user.id, "*Раздел в разработке*",
+                           reply_markup=types.InlineKeyboardMarkup().add(await b().button_close()), parse_mode="Markdown")
 
 
 #Обработчик ручного ввода реквизитов вывода.
 @dp.message_handler(content_types=types.ContentType.all(), state=FSM.requisites)
 async def user_get_requisites(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    way = data['way_with']
+    way = data['way_withd']
     sum = data['sum_with']
-    msg = data['msg']
-    user_id = message.from_user.id
-    chat_id = message.chat.id
     keyboard = types.InlineKeyboardMarkup()
     try:
         int(message.text)
         if ((way == "qiwi") and ((len(str(message.text)) != 11) or (message.text[:1] != "7"))) or (way == "bank") and (len(message.text) != 16):
             if (way == "qiwi") and (len(str(message.text)) != 11):
                 txt_wrong = "*Неверная длина номера телефона.*\n\nНажмите на кнопку ниже и введите номер телефона еще раз"
-                msg = await bot.send_message(chat_id, txt_wrong , reply_markup=keyboard, parse_mode="Markdown")
             elif (way == "qiwi") and (message.text[:1] != "7"):
                 txt_wrong = "*Неверный номер телефона. Номер должен начинаться с 7.*\n\nНажмите на кнопку ниже и введите номер телефона еще раз"
-                msg = await bot.send_message(chat_id, txt_wrong, reply_markup=keyboard, parse_mode="Markdown")
             elif (way == "bank") and (len(message.text) != 16):
                 txt_wrong = "*Неверная длина номера карты.*\n\nНажмите на кнопку ниже и введите номер карты еще раз"
-                msg = await bot.send_message(chat_id, txt_wrong, reply_markup=keyboard, parse_mode="Markdown")
-            msg
-            button_enter_again = types.InlineKeyboardButton(text='\U0000267B Ввести заново',
-                                                            callback_data=str(way) + '_withd_sum_' + str(format(sum, '06')) + str(
-                                                                format(msg.message_id, '010')));
-            button_back_acc = types.InlineKeyboardButton(text='\U0000274C Отмена',
-                                                         callback_data='back_to_acc_' + str(
-                                                             format(msg.message_id, '010')));
-            keyboard.add(button_enter_again, button_back_acc);
-            await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+            keyboard.add(types.InlineKeyboardButton('\U0000267B Ввести заново',
+                                                    callback_data=f"{way}_withd_sum_{format(sum, '06')}"),
+                         await b().button_lk())
+            await bot.send_message(message.from_user.id, txt_wrong, reply_markup=keyboard, parse_mode="Markdown")
         else:
-            requisites = str(message.text)
             if way == "qiwi":
                 lineway = "QIWI"
                 req = "Номер телефона - *+"
             elif way == "bank":
                 lineway = "Карта"
                 req = "Номер карты - *"
-            msg = await bot.send_message(message.from_user.id, text="*Подтвердите правильность данных*"
-                                                              "\n\nСумма - *" + str(sum) + '₽*'
-                                                                '\nСпособ - *' + lineway +
-                                                            '*\n' + req + str(requisites) + "*",
+            keyboard.add(types.InlineKeyboardButton('\U00002705 Подтвердить',
+                                                    callback_data=f"confirm_with_{way}_{format(sum, '06')}_{format(message.text, '17')}"),
+                         types.InlineKeyboardButton('\U0000267B Изменить', callback_data='withd_balance_main_'))
+            await bot.send_message(message.from_user.id, "*Подтвердите правильность данных*"
+                                                         f"\n\nСумма - *{sum}₽*"
+                                                         f"\nСпособ - *{lineway}*\n{req}{message.text}*",
                                    reply_markup=keyboard, parse_mode="Markdown")
-            msg
-            button_confirm_withd = types.InlineKeyboardButton(text='\U00002705 Подтвердить',
-                                                              callback_data='confirm_with_' + str(way) +
-                                                                            "_" + str(format(sum, '06')) + "_" + str(format(requisites, '17')) + '_' + str(
-                                                           format(msg.message_id, '010')));
-            button_change_withd = types.InlineKeyboardButton(text='\U0000267B Изменить',
-                                                           callback_data='withdraw_balance_' + str(
-                                                                    format(msg.message_id, '010')));
-            keyboard.add(button_confirm_withd, button_change_withd)
-            await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
-
     except:
-        msg = await bot.send_message(message.from_user.id, text="*Неверный формат реквизитов. *"
-                                                          "\n\nВыберите одно из действий",
-                                   reply_markup=keyboard, parse_mode="Markdown")
-        msg
-        button_enter_again = types.InlineKeyboardButton(text='\U0000267B Ввести заново',
-                                                        callback_data=str(way) + '_withd_sum_' + str(
-                                                            format(sum, '06')) + str(
-                                                            format(msg.message_id, '010')));
-        button_back_acc = types.InlineKeyboardButton(text='\U0000274C Отмена',
-                                                     callback_data='back_to_acc_' + str(
-                                                         format(msg.message_id, '010')));
-        keyboard.add(button_enter_again, button_back_acc);
-        await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+        keyboard.add(types.InlineKeyboardButton('\U0000267B Ввести заново',
+                                                        callback_data=f"{way}_withd_sum_{format(sum, '06')}"),
+                     await b().button_lk())
+        await bot.send_message(message.from_user.id, "*Неверный формат реквизитов. *"
+                                                     "\n\nВыберите одно из действий",
+                               reply_markup=keyboard, parse_mode="Markdown")
     await state.finish()
 
 
@@ -671,8 +373,7 @@ async def user_other_sum_enter(message, state: FSMContext):
     data = await state.get_data()
     way = data['way']
     oper = data['oper']
-    msg = data['msg']
-    keyboard = types.InlineKeyboardMarkup();
+    keyboard = types.InlineKeyboardMarkup()
     if oper == "withd":
         lineoper = "вывода"
     if oper == "topup":
@@ -681,163 +382,367 @@ async def user_other_sum_enter(message, state: FSMContext):
         lineway = "QIWI \U0001F95D"
     elif way == "bank":
         lineway = "Карта \U0001F4B3"
+    b_enter_again = types.InlineKeyboardButton('\U0000267B Ввести заново',
+                                               callback_data=f"{way}_{oper}_other_sum")
     try:
         int(message.text)
         if (int(message.text) > 10000) or (int(message.text) < 50):
-            if (int(message.text) > 10000):
-                msg = await bot.send_message(message.from_user.id, text = "*Максимальная сумма " + lineoper + " - 10000₽*"
+            keyboard.add(b_enter_again, await b().button_lk())
+            if int(message.text) > 10000:
+                await bot.send_message(message.from_user.id, f"*Максимальная сумма {lineoper} - 10000₽*"
                                                                 "\n\nВыберите одно из действий",
                                    reply_markup=keyboard, parse_mode="Markdown")
-            elif (int(message.text) < 50):
-                msg = await bot.send_message(message.from_user.id, text="*Минимальная сумма " + lineoper + " - 50₽*"
+            elif int(message.text) < 50:
+                await bot.send_message(message.from_user.id, f"*Минимальная сумма {lineoper} - 50₽*"
                                                                   "\n\nВыберите одно из действий",
                                        reply_markup = keyboard, parse_mode = "Markdown")
-            msg
-            button_enter_again = types.InlineKeyboardButton(text='\U0000267B Ввести заново',
-                                                            callback_data=way + '_' + str(oper) + '_other_sum_' + str(
-                                                                format(msg.message_id, '010')));
-            button_back_acc = types.InlineKeyboardButton(text='\U0000274C Отмена',
-                                                         callback_data='back_to_acc_' + str(
-                                                             format(msg.message_id, '010')));
-            keyboard.add(button_enter_again, button_back_acc);
-            await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
         else:
-            sum_topup = int(message.text)
-            msg = await bot.send_message(message.from_user.id, text="*Подтвердите правильность способа и суммы*"
-                                                              "\n\nСумма " + lineoper + " - *" + str(sum_topup) + '₽*'
-                                                                '\nСпособ ' + lineoper + ' - *' + str(lineway) + "*",
+            keyboard.add(types.InlineKeyboardButton('\U00002705 Подтвердить',
+                                                    callback_data=f"{way}_{oper}_sum_{format(int(message.text), '06')})"),
+                         types.InlineKeyboardButton('\U0000267B Изменить',
+                                                    callback_data=f"{oper}_balance_main_"))
+            await bot.send_message(message.from_user.id, "*Подтвердите правильность способа и суммы*"
+                                                              f"\n\nСумма {lineoper} - *{int(message.text)}₽*"
+                                                                f"\nСпособ {lineoper} - *{lineway}*",
                                    reply_markup=keyboard, parse_mode="Markdown")
-            msg
-            button_check_top = types.InlineKeyboardButton(text='\U00002705 Подтвердить', callback_data=str(way) + '_' + str(oper) + '_sum_' + str(format(sum_topup, '06')) + "_" + str(
-                                                           format(msg.message_id, '010')));
-            keyboard.add(button_check_top);
-            if oper == "withd":
-                button_change = types.InlineKeyboardButton(text='\U0000267B Изменить',
-                                                           callback_data='withdraw_balance_' + str(
-                                                                    format(msg.message_id, '010')));
-            if oper == "topup":
-                button_change = types.InlineKeyboardButton(text='\U0000267B Изменить',
-                                                              callback_data='top_up_balance_main_' + str(
-                                                                   format(msg.message_id, '010')));
-            keyboard.add(button_change);
-            await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
     except:
-        msg = await bot.send_message(message.from_user.id, text="*Неверный формат числа. *"
+        keyboard.add(b_enter_again, await b().button_lk())
+        await bot.send_message(message.from_user.id, "*Неверный формат числа. *"
                                                           "\n\nВыберите одно из действий",
                                    reply_markup=keyboard, parse_mode="Markdown")
-        msg
-        button_enter_again = types.InlineKeyboardButton(text='\U0000267B Ввести заново',
-                                                        callback_data=way + '_' + str(oper) + '_other_sum_' + str(
-                                                            format(msg.message_id, '010')));
-        button_back_acc = types.InlineKeyboardButton(text='\U0000274C Отмена',
-                                                     callback_data='back_to_acc_' + str(
-                                                         format(msg.message_id, '010')));
-        keyboard.add(button_enter_again, button_back_acc);
-        await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+    await state.finish()
+
+
+# Админский обработчик запроса подтверждения и подтверждения транзакции. Запрос типа (adm)(chk)_accure_тип транзакции(05)_
+# айди транзакции
+@dp.callback_query_handler(lambda call: call.data[:11] in ("adm_accure_", "chk_accure_"))
+async def change_trans_type(call):
+    trans_type = call.data[11:16]
+    trans_id = call.data[17:]
+    adm_id = call.from_user.id
+    if await db.adm_valid_check(adm_id):
+        if await db.adm_lvl_check(adm_id) > conf.junior_lvl:
+            if call.data[:3] == "adm":
+                if trans_type == "topup":
+                    await db.adm_topup_true(trans_id)
+                elif trans_type == "withd":
+                    await db.adm_withd_true(trans_id)
+                await bot.edit_message_text(f"*Транзакция №{trans_id} успешно подтверждена!*",
+                                                  adm_id, call.message.message_id,
+                                            reply_markup=types.InlineKeyboardMarkup(1).add(
+                                                types.InlineKeyboardButton('\U0000267B Другая транзакция',
+                                                                   callback_data="control_transact"),
+                                                await b().button_adm_lk()), parse_mode="Markdown")
+            elif call.data[:3] == "chk":
+                if trans_type == "topup":
+                    way = "пополнения"
+                elif trans_type == "withd":
+                    way = "вывода"
+                await bot.edit_message_text(f"*Вы хотите подтвердить транзакцию {way} №{trans_id}?*",
+                                                  call.from_user.id, call.message.message_id,
+                                            reply_markup=types.InlineKeyboardMarkup(1).add(
+                                                types.InlineKeyboardButton('\U00002705 Да',
+                                                        callback_data=f"adm_accure_{trans_type}_{trans_id}"),
+                                                await b().button_adm_lk()), parse_mode="Markdown")
+        else:
+            await b().not_ehough_access(adm_id, "1 (Middle)", call.message.message_id)
+    else:
+        await b().bpmanag_no_valid(adm_id, True, call.message.message_id)
+
+
+#Админский обработчик с выбором типа желаемой транзакции
+@dp.callback_query_handler(lambda call: call.data == "control_transact")
+async def choose_trans_type(call):
+    if await db.adm_valid_check(call.from_user.id):
+        await bot.edit_message_text(t.m_adm_type_trans, call.from_user.id, call.message.message_id,
+                                    parse_mode="Markdown", reply_markup=types.InlineKeyboardMarkup(2).add(
+                types.InlineKeyboardButton('Пополнение', callback_data=f"accure_topup_{format(call.from_user.id, '015')}"),
+                types.InlineKeyboardButton('Вывод', callback_data=f"accure_withd_{format(call.from_user.id, '015')}"),
+                await b().button_adm_lk("\U00002B05")))
+    else:
+        await b().bpmanag_no_valid(call.from_user.id, True, call.message.message_id)
+
+@dp.callback_query_handler(lambda call: call.data == "control_users")
+async def enter_user(call, state: FSMContext):
+    if await db.adm_valid_check(call.from_user.id):
+        await bot.edit_message_text("*Введите ник или айди пользователя*", call.from_user.id, call.message.message_id, parse_mode="Markdown")
+        await state.update_data(id_adm=call.from_user.id)
+        await FSM.enter_id_user.set()
+    else:
+        await b().bpmanag_no_valid(call.from_user.id, True, call.message.message_id)
+
+@dp.message_handler(content_types=types.ContentType.all(), state=FSM.enter_id_user)
+async def get_id_trans(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    adm_id = data['id_adm']
+    if message.text.isdigit() and await db.user_exists(message.text) or await db.user_exists(message.text, "username"):
+        await bot.send_message(adm_id, "*Пользователь найден*",
+                               reply_markup=types.InlineKeyboardMarkup(1).add(
+                                   types.InlineKeyboardButton("\U0000267B Ввести заново",
+                                                              callback_data="control_users"),
+                                   await b().button_adm_lk()),
+                               parse_mode="Markdown")
+    else:
+        await bot.send_message(adm_id, "*Данный пользователь не найден*", reply_markup=types.InlineKeyboardMarkup(1).add(
+            types.InlineKeyboardButton("\U0000267B Ввести заново", callback_data="control_users"), await b().button_adm_lk()),
+                               parse_mode="Markdown")
+    await state.finish()
+
+# Админский обработчик ручного ввода номера транзакции. Запрос типа accure_тип транзакции(05)_айди админа(15)
+@dp.callback_query_handler(lambda call: call.data[:7] == "accure_")
+async def accure_trans(call, state: FSMContext):
+    if await db.adm_valid_check(call.from_user.id):
+        if call.data[7:12] == "topup":
+            await bot.edit_message_text(t.m_enter_num_topup, call.from_user.id, call.message.message_id, parse_mode="Markdown")
+        elif call.data[7:12] == "withd":
+            await bot.edit_message_text(t.m_enter_num_withd, call.from_user.id, call.message.message_id, parse_mode="Markdown")
+        await state.update_data(id_adm=call.from_user.id, trans_type=call.data[7:12])
+        await FSM.accure_id_trans.set()
+    else:
+        await b().bpmanag_no_valid(call.from_user.id, True, call.message.message_id)
+
+
+#Админский обработчик подтверждения смены способа вывода. Запрос типа chk_withd_change_way_айди вывода
+@dp.callback_query_handler(lambda call: call.data[:21] == "chk_withd_change_way_")
+async def change_withd_way(call):
+    if await db.adm_valid_check(call.from_user.id):
+        if await db.adm_lvl_check(call.from_user.id) > conf.middle_lvl:
+            if await db.get_withd_way(call.data[21:]) == "bank":
+                button_another_way = types.InlineKeyboardButton("QIWI", callback_data=f"rqs_withd_change_qiwi_{call.data[21:]}")
+                way_withd_write = "Банковская карта"
+            elif await db.get_withd_way(call.data[21:]) == "qiwi":
+                button_another_way = types.InlineKeyboardButton("Банковская карта", callback_data=f"rqs_withd_change_bank_{call.data[21:]}")
+                way_withd_write = "QIWI"
+            await bot.edit_message_text(f"*Текущий способ вывода транзакции №{call.data[21:]} - {way_withd_write}"
+                                                   "\n\nВозможность изменить способ вывода на:*", call.from_user.id,
+                                              call.message.message_id, reply_markup=types.InlineKeyboardMarkup(1).add(
+                    button_another_way, await b().button_adm_lk()), parse_mode="Markdown")
+        else:
+            await b().not_ehough_access(call.from_user.id, "2 (Master)", call.message.message_id)
+    else:
+        await b().bpmanag_no_valid(call.from_user.id, True, call.message.message_id)
+
+
+# Админский обработчик ручного ввода новых реквизитов. Запрос типа rqs_withd_change_способ вывода(04)_старый способ(04)
+@dp.callback_query_handler(lambda call: call.data[:17] == "rqs_withd_change_")
+async def get_new_req(call, state: FSMContext):
+    if await db.adm_valid_check(call.from_user.id):
+        if await db.adm_lvl_check(call.from_user.id) > conf.middle_lvl:
+            await bot.edit_message_text(t.m_enter_new_requisites, call.from_user.id, call.message.message_id,
+                                              parse_mode="Markdown")
+            await state.update_data(id_adm=call.from_user.id, new_way=call.data[17:21], old_way=await db.get_withd_way(call.data[22:]), with_id=call.data[22:])
+            await FSM.adm_new_requis.set()
+        else:
+            await b().not_ehough_access(call.from_user.id, "2 (Master)", call.message.message_id)
+    else:
+        await b().bpmanag_no_valid(call.from_user.id, True, call.message.message_id)
+
+
+#Админская панель отображения измененных данных вывода
+@dp.message_handler(content_types=types.ContentType.all(), state=FSM.adm_new_requis)
+async def get_id_trans(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    keyboard = types.InlineKeyboardMarkup(1)
+    adm_id = data['id_adm']
+    with_id = int(data['with_id'])
+    if await db.adm_valid_check(adm_id):
+        if await db.adm_lvl_check(adm_id) > conf.middle_lvl:
+            try:
+                int(message.text)
+                new_req = message.text
+                if data['new_way'] == "bank":
+                    new_way_w = "Банковская карта"
+                    if len(new_req) != 16:
+                        raise
+                elif data['new_way'] == "qiwi":
+                    new_way_w = "QIWI"
+                    if len(new_req) != 11 or new_req[0] != "7":
+                        raise
+                if data['new_way'] != data['old_way']:
+                    about_new_way = f"Новый способ - {new_way_w}\n"
+                else:
+                    about_new_way = ""
+                keyboard.add(types.InlineKeyboardButton("\U00002705 Подтвердить",
+                                                        callback_data=f"adm_withd_change_{data['new_way']}_{format(with_id, '010')}_{new_req}"),
+                             await b().button_adm_lk())
+                await bot.send_message(adm_id, f"*Желаемые изменения: \n\nТранзакция №{with_id}\n"
+                                               f"{about_new_way}Новые реквизиты - {new_req}*", reply_markup=keyboard,
+                                       parse_mode="Markdown")
+            except:
+                keyboard.add(types.InlineKeyboardButton("\U0000267B Ввести заново",
+                                                        callback_data=f"rqs_withd_change_{data['new_way']}_{with_id}"),
+                             await b().button_adm_lk())
+                await bot.send_message(adm_id, "*Неверные реквизиты\n\nВыберите одно из действий:*", reply_markup=keyboard, parse_mode="Markdown")
+        else:
+            await b().not_ehough_access(adm_id, "2 (Master)")
+    else:
+        await b().bpmanag_no_valid(adm_id, False)
+    await state.finish()
+
+
+# Админский обработчик изменения транзакции вывода. Запрос типа adm_withd_change_способ(04)_
+# айди транзакции(10)_новые реквизиты
+@dp.callback_query_handler(lambda call: call.data[:17] == "adm_withd_change_")
+async def change_withd_way(call):
+    if await db.adm_valid_check(call.from_user.id):
+        if await db.adm_lvl_check(call.from_user.id) > conf.middle_lvl:
+            await db.update_withd(call.data[22:32].lstrip("0"), call.data[17:21], call.data[33:])
+            if call.data[17:21] == "bank":
+                new_way_w = "Банковская карта"
+            else:
+                new_way_w = "QIWI"
+            await bot.edit_message_text(f"*Текущая информация: \n\nТранзакция №{call.data[22:32].lstrip('0')}\nСпособ - {new_way_w}"
+                                              f"\nРеквизиты - {call.data[33:]}*", call.from_user.id,
+                                              call.message.message_id, reply_markup=types.InlineKeyboardMarkup(1).add(
+                    types.InlineKeyboardButton('\U0000267B Другая транзакция',
+                                               callback_data="control_transact"),
+                    await b().button_adm_lk()), parse_mode="Markdown")
+        else:
+            await b().not_ehough_access(call.from_user.id, "2 (Master)", call.message.message_id)
+    else:
+        await b().bpmanag_no_valid(call.from_user.id, False)
+
+
+#Админская панель отображения транзакций
+@dp.message_handler(content_types=types.ContentType.all(), state=FSM.accure_id_trans)
+async def get_id_trans(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    keyboard = types.InlineKeyboardMarkup(1)
+    id_adm = data['id_adm']
+    trans_type = data['trans_type']
+    b_adm_trans = types.InlineKeyboardButton('\U0000267B Другая транзакция',
+                                             callback_data="control_transact")
+    try:
+        int(message.text)
+        if await db.adm_valid_check(id_adm):
+            if 0 < int(message.text) < 100000:
+                if trans_type == "topup":
+                    id_get_trans, user, way, sum, time_cr, accure, done, time_do = [str(x) for x in await db.adm_info_topup(message.text)]
+                    if accure == "False":
+                        accure_w = "\U0000274C"
+                    else:
+                        accure_w = "\U00002705"
+                elif trans_type == "withd":
+                    id_get_trans, user, way, sum, time_cr, done, time_do, requisites = [str(x) for x in await db.adm_info_withd(message.text)]
+                if way == "qiwi":
+                    way_w = "QIWI"
+                elif way == "bank":
+                    way_w = "Банковская карта"
+                if done == "False":
+                    done_w = "\U0000274C"
+                else:
+                    done_w = "\U00002705"
+                if time_do == "None":
+                    time_do_w = "\U0000274C"
+                else:
+                    time_do_w = time_do
+                username = str(await db.find_username(user))
+                if username == "None":
+                    username = "Никнейм отсуствует"
+                else:
+                    username = f"@{username}"
+                if trans_type == "topup":
+                    if accure == "False" and await db.adm_lvl_check(id_adm) > conf.junior_lvl:
+                        keyboard.add(types.InlineKeyboardButton('\U00002705 Подтвердить транзакцию',
+                                                               callback_data=f"chk_accure_topup_{id_get_trans}"))
+                    keyboard.add(b_adm_trans, await b().button_adm_lk())
+                    await bot.send_message(id_adm, f"Транзакция №{id_get_trans}"
+                                                   f"\nПользователь - {username} (id<code>{user}</code>)"
+                                                   f"\nСпособ - {way_w}"
+                                                   f"\nСумма - {sum} ₽"
+                                                   f"\nВремя создания - {time_cr}"
+                                                   f"\nПеревод выполнен - {accure_w}"
+                                                   f"\nПополнение завершено - {done_w}"
+                                                   f"\nВремя завершения - {time_do_w}",
+                                           reply_markup=keyboard, parse_mode="HTML")
+                elif trans_type == "withd":
+                    if done == "False" and await db.adm_lvl_check(id_adm) > conf.junior_lvl:
+                        keyboard.add(types.InlineKeyboardButton('\U00002705 Подтвердить транзакцию',
+                                                                   callback_data=f"chk_accure_withd_{id_get_trans}"))
+                        if await db.adm_lvl_check(id_adm) > conf.middle_lvl:
+                            keyboard.add(types.InlineKeyboardButton('\U0000267B Изменить способ',
+                                                                       callback_data=f"chk_withd_change_way_{id_get_trans}"),
+                                         types.InlineKeyboardButton('\U0000267B Изменить реквизиты',
+                                                                       callback_data=f"rqs_withd_change_{way}_{id_get_trans}"))
+                    keyboard.add(b_adm_trans, await b().button_adm_lk())
+                    await bot.send_message(id_adm, f"Транзакция №{id_get_trans}"
+                                                   f"\nПользователь - {username} (id<code>{user}</code>)"
+                                                   f"\nСпособ - {way_w}"
+                                                   f"\nСумма - {sum} ₽"
+                                                   f"\nВремя создания - {time_cr}"
+                                                   f"\nВывод завершен - {done_w}"
+                                                   f"\nВремя завершения - {time_do_w}"
+                                                   f"\nРеквизиты - <code>{requisites}</code>",
+                                           reply_markup=keyboard, parse_mode="HTML")
+            else:
+                raise
+        else:
+            await b().bpmanag_no_valid(id_adm, False)
+    except:
+        keyboard.add(b_adm_trans, await b().button_adm_lk())
+        await bot.send_message(message.from_user.id, f"*Транзакция с таким номером не найдена.*"
+                                                          "\n\nВыберите одно из действий",
+                                   reply_markup=keyboard, parse_mode="Markdown")
     await state.finish()
 
 
 @dp.message_handler(lambda message: message.text == "\U0001F464 Личный кабинет")
 async def account(message):
-    await b().ButtonAccount(message)
-
-
-@dp.message_handler(lambda message: message.text == "\U0001F4AC Правила")
-async def main_rules(message):
-    keyboard = types.InlineKeyboardMarkup();
-    msg = await bot.send_message(message.from_user.id, text=t.m_rules, reply_markup=keyboard, parse_mode="Markdown")
-    msg
-    button_delete = types.InlineKeyboardButton(text='\U0000274C Закрыть',
-                                               callback_data='delete_msg_' + str(format(msg.message_id, '010')));
-    keyboard.add(button_delete);
-    await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+    await ch().data_checker(message.from_user)
+    if await ch().rules_checker(message.from_user.id) == (True, False):
+        await b().ButtonAccount(message.from_user.id)
 
 
 @dp.message_handler(lambda message: message.text == "\U0001F4AC Поддержка")
 async def main_rules(message):
-    await message.delete()
-    keyboard = types.InlineKeyboardMarkup();
-    msg = await bot.send_message(message.from_user.id, text=t.m_support, reply_markup=keyboard, parse_mode="Markdown")
-    msg
-    button_delete = types.InlineKeyboardButton(text='\U0000274C Закрыть',
-                                               callback_data='delete_msg_' + str(format(msg.message_id, '010')));
-    keyboard.add(button_delete);
-    await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+    if await ch().rules_checker(message.from_user.id) == (True, False):
+        await message.delete()
+        await bot.send_message(message.from_user.id, t.m_support, reply_markup=types.InlineKeyboardMarkup(1).add(
+            await b().button_support(), await b().button_close()), parse_mode="Markdown")
 
 
 @dp.message_handler(lambda message: message.text == "\U0001F4D5 Правила")
 async def main_new_rules(message):
     await message.delete()
-    msg = await bot.send_message(message.from_user.id, text=t.m_rules, parse_mode="Markdown")
-    msg
+    await bot.send_message(message.from_user.id, t.m_rules, parse_mode="Markdown")
 
 
 @dp.message_handler(lambda message: message.text == "\U00002705 Принять правила")
 async def main_start(message):
-    await b().ButtonCmdStart(message)
+    await b().ButtonCmdStart(message.from_user.id)
     await db.rules_accept(message.from_user.id)
 
 
-@dp.message_handler(lambda message: message.text == "\U00002139 Меню" or
-                     message.text == "\U00002B05 Вернуться в меню" or message.text == "\U0001F680 Начать пользование")
+@dp.message_handler(lambda message: message.text in ("\U00002139 Меню", "\U00002B05 Вернуться в меню", "\U0001F680 Начать пользование"))
 async def main(message: types.Message):
-    user_id = message.from_user.id
-    await b().ButtonMenu(user_id)
+    if await ch().rules_checker(message.from_user.id) == (True, False):
+        await b().ButtonMenu(message.from_user.id)
 
 
-@dp.message_handler(lambda message: message.text == "\U0001F3AE Игры" or message.text == "\U00002B05 Вернуться к играм")
+@dp.message_handler(lambda message: message.text in ("\U0001F3AE Игры", "\U00002B05 Вернуться к играм"))
 async def main_games(message):
-    call_send = 0
-    await b().ButtonMainGames(call_send, message.from_user.id, message.chat.id, message.message_id)
+    if await ch().rules_checker(message.from_user.id) == (True, False):
+        await b().ButtonMainGames(False, message.from_user.id, message.message_id)
 
 
 @dp.message_handler(lambda message: message.text == "\U00002139 Справка")
 async def info_bot(message):
-    await b().ButtonInfo(message.from_user.id)
+    if await ch().rules_checker(message.from_user.id) == (True, False):
+        await b().ButtonInfo(message.from_user.id)
 
 
-@dp.message_handler(lambda message: message.text == "\U0001F4AC Комиссия")
-async def where_10(message):
-    await message.delete()
-    keyboard = types.InlineKeyboardMarkup();
-    msg = await bot.send_message(message.from_user.id, text=t.m_where10, reply_markup=keyboard, parse_mode="Markdown")
-    msg
-    button_delete = types.InlineKeyboardButton(text='\U0000274C Закрыть',
-                                               callback_data='delete_msg_' + str(format(msg.message_id, '010')));
-    keyboard.add(button_delete);
-    await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+@dp.message_handler(lambda message: message.text in ("\U0001F4AC Комиссия", "\U0001F4AC Алгоритмы", "\U0001F4AC Правила"))
+async def que_answ(message):
+    if await ch().rules_checker(message.from_user.id) == (True, False):
+        await message.delete()
+        await bot.send_message(message.from_user.id, t.dct_que_answ[message.text],
+                               reply_markup=types.InlineKeyboardMarkup().add(
+                                   await b().button_close()), parse_mode="Markdown")
 
 
-@dp.message_handler(lambda message: message.text == "\U0001F4AC Алгоритмы")
-async def what_random(message):
-    await message.delete()
-    keyboard = types.InlineKeyboardMarkup();
-    msg = await bot.send_message(message.from_user.id, text=t.m_why_rand, reply_markup=keyboard, parse_mode="Markdown")
-    msg
-    button_delete = types.InlineKeyboardButton(text='\U0000274C Закрыть',
-                                               callback_data='delete_msg_' + str(format(msg.message_id, '010')));
-    keyboard.add(button_delete);
-    await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
-
-
-@dp.message_handler(lambda message: message.text == "\U0001F93A Дуэль")
+@dp.message_handler(lambda message: message.text in ("\U0001F93A Дуэль", "\U0001F3B2 Русская рулетка", "\U0001F451 Королевская битва"))
 async def duel_game_bet(message):
-    call_send = 0
-    game = "duel"
-    await b().ButtonGameBet(game, call_send, message.from_user.id, message.chat.id, message.message_id)
-
-
-@dp.message_handler(lambda message: message.text == "\U0001F3B2 Русская рулетка")
-async def rus_game_bet(message):
-    call_send = 0
-    game = "russ"
-    await b().ButtonGameBet(game, call_send, message.from_user.id, message.chat.id, message.message_id)
-
-
-@dp.message_handler(lambda message: message.text == "\U0001F451 Королевская битва")
-async def king_game_bet(message):
-    call_send = 0
-    game = "king"
-    await b().ButtonGameBet(game, call_send, message.from_user.id, message.chat.id, message.message_id)
+    if await ch().rules_checker(message.from_user.id) == (True, False):
+        await b().ButtonGameBet(message.text, message.from_user.id, message.message_id)
 
 executor.start_polling(dp)

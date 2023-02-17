@@ -3,97 +3,72 @@ import asyncio
 from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher
 import conf
-from db import BotDB as db
+from db import BotDB as database
 from buttonsTg import ButtonsTg as b
-from texts import TextsTg as txt
 bot = Bot(token=conf.TOKEN)
 dp = Dispatcher(bot)
-db = db('lotEasy.db')
+db = database('lotEasy.db')
+
 
 class Checkers:
 
     async def topupChekerAll(self):
-        N = True
         print("Checking users topups is enabled")
-        while N != False:
-            count_lines = int(await db.get_lines_no_topup())
-            print("Lines not done topups - " + str(count_lines))
+        while True:
+            print(f"Lines not done topups - {await db.get_lines_no_topup()}")
             M = 0
-            while M < count_lines:
-                lines = await db.all_no_topup_checker(M)
-                int_pay = lines[0]
-                user_id = lines[1]
-                sum = lines[2]
-                accrued = lines[3]
-                done = lines[4]
-                if (accrued == True) and (done == False):
+            while M < int(await db.get_lines_no_topup()):
+                int_pay, user_id, sum, accrued, done = await db.all_no_topup_checker(M)
+                if accrued and done is False:
                     await db.topup_balance(user_id, sum)
                     await db.set_topup_done(int_pay)
-                    keyboard = types.InlineKeyboardMarkup();
-                    m_success_topup = ("\U00002705 *Пополнение №" + str(int_pay) + " успешно выполнена!*"
-                                       "\n\n*Ваш баланс:*\n" + str(int(await db.get_user_balance(user_id))) + "₽")
-                    msg = await bot.send_message(text=m_success_topup, chat_id=user_id,
-                                                      reply_markup=keyboard,
-                                                      parse_mode="Markdown")
-                    msg
-                    button_back_acc = types.InlineKeyboardButton(text='\U0001F464 Личный кабинет',
-                                                                 callback_data='back_to_acc_' + str(
-                                                                     format(msg.message_id, '010')));
-                    keyboard.add(button_back_acc)
-                    await bot.edit_message_reply_markup(user_id, msg.message_id, reply_markup=keyboard)
+                    m_success_topup = (f"\U00002705 *Пополнение №{int_pay} успешно выполнено!*"
+                                       f"\n\n*Ваш баланс:*\n{int(await db.get_user_balance(user_id))}₽")
+                    await bot.send_message(user_id, m_success_topup, "Markdown",
+                                           reply_markup=types.InlineKeyboardMarkup(1).add(await b().button_lk()))
                 M += 1
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
 
-    async def rules_checker(self, user_id, call):
-        rules_acc = await db.get_rules_accept(user_id)
-        ban_acc = await db.get_ban(user_id)
-        if rules_acc == False:
-            await b().ButtonRulesAccept(call)
-        elif ban_acc == True:
-            await b().ButtonBan(call)
-        return rules_acc, ban_acc
+    async def data_checker(self, mfu):
+        if (await db.get_user_name(mfu.id) != mfu.first_name) or (
+                await db.get_user_lastname(mfu.id) != mfu.last_name) or (
+                await db.get_user_username(mfu.id) != mfu.username):
+            await db.update_data(mfu.first_name, mfu.last_name, mfu.username,
+                                 mfu.id)
+
+    async def rules_checker(self, user_id):
+        if not await db.get_rules_accept(user_id):
+            await b().ButtonRulesAccept(user_id, False)
+        elif await db.get_ban(user_id):
+            await b().ButtonBan(user_id)
+        return await db.get_rules_accept(user_id), await db.get_ban(user_id)
 
     async def winnerWarnedChecker(self):
-        N = True
         print("Checking the notifications of the winners")
-        while N != False:
+        while True:
             count_lines = await db.get_lines_no_warned()
             M = 0
-            print("Lines not warned winners - " + str(count_lines))
+            print(f"Lines not warned winners - {count_lines}")
             while M < count_lines:
-                lines = await db.all_no_warned_checker(M)
-                id_game = lines[0]
-                num_win = lines[1]
-                warned = lines[2]
-                game = lines[3]
+                id_game, num_win, warned, game = [await db.all_no_warned_checker(M)]
                 if game == "Дуэль":
                     g_line = "duel"
                 elif game == "Русская рулетка":
                     g_line = "russ"
                 elif game == "Королевская битва":
                     g_line = "king"
-                if (num_win != 0) and (warned == False):
-                    id_bet = await db.get_winner(id_game, g_line, num_win)
-                    user_id = id_bet[0]
-                    bet = id_bet[1]
-                    line = "\U0001F389 *Вы победили в игре *\n" + game + " №" + str(id_game) +\
-                           "\nВаш выигрыш - *" + str(bet) + "₽*\n" \
-                                                              "Проверьте свою удачу еще раз!\n"
+                if (num_win != 0) and (warned is False):
+                    user_id, bet = [await db.get_winner(id_game, g_line, num_win)]
+                    line = f"\U0001F389 *Вы победили в игре *\n{game} №{id_game}"\
+                           f"\nВаш выигрыш - *{bet}₽*\nПроверьте свою удачу еще раз!\n"
                     await db.topup_balance(user_id, bet)
                     await db.warned_winner(g_line, id_game)
-                    msg = await bot.send_message(chat_id=user_id, text=line, parse_mode="Markdown")
-                    msg
-                    keyboard = types.InlineKeyboardMarkup(row_width=1)
                     key_again = types.InlineKeyboardButton(text='\U0000267B Попробовать еще раз',
-                                                           callback_data='change_bet_' + str(
-                                                               format(msg.message_id, '010')));
-                    key_back_acc = types.InlineKeyboardButton(text='\U0001F464 Личный кабинет',
-                                                              callback_data='back_to_acc_' + str(
-                                                                  format(msg.message_id, '010')));
-                    keyboard.add(key_again, key_back_acc)
-                    await bot.edit_message_reply_markup(msg.chat.id, msg.message_id, reply_markup=keyboard)
+                                                           callback_data='change_bet')
+                    await bot.send_message(user_id, line, "Markdown",
+                                           reply_markup=types.InlineKeyboardMarkup(1).add(key_again, await b().button_lk()))
                 M += 1
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
 
 
 

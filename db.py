@@ -19,8 +19,8 @@ class BotDB:
             port = port_id)
         self.cursor = self.conn.cursor()
 
-    async def user_exists(self, user_id):
-        self.cursor.execute("SELECT id FROM users WHERE user_id = %s", (user_id,))
+    async def user_exists(self, user_id, arg="user_id"):
+        self.cursor.execute(f"SELECT id FROM users WHERE {arg} = %s", (user_id,))
         return bool(len(self.cursor.fetchall()))
 
     async def get_user_id(self, user_id):
@@ -73,8 +73,7 @@ class BotDB:
         return self.cursor.fetchone()[0]
 
     async def set_topup_done(self, top_id):
-        date = datetime.now()
-        self.cursor.execute("UPDATE payments SET done = True, time_done = %s WHERE int_pay = %s", (str(date), top_id,))
+        self.cursor.execute("UPDATE payments SET done = True, time_done = %s WHERE int_pay = %s", (str(datetime.now()), top_id,))
         return self.conn.commit()
 
     async def get_topup_sum(self, top_id):
@@ -127,8 +126,7 @@ class BotDB:
         return self.cursor.fetchone()[0]
 
     async def win_num_in(self, game, num_win, id_room):
-        date = datetime.now()
-        self.cursor.execute("UPDATE " + game + "_room SET num_win = %s, done = %s, time_done = %s WHERE id = %s", (num_win, True, str(date), id_room,))
+        self.cursor.execute("UPDATE " + game + "_room SET num_win = %s, done = %s, time_done = %s WHERE id = %s", (num_win, True, str(datetime.now()), id_room,))
         return self.conn.commit()
 
     async def warned_winner(self, game, id_room):
@@ -186,8 +184,7 @@ class BotDB:
 
     async def get_story(self, user_id, N):
         self.cursor.execute("SELECT int_pay, way_topup, sum, done, oper, time_create FROM payments WHERE user_id = %s UNION ALL SELECT int_wit, way_with, sum, done, oper, time_create FROM withdraws WHERE user_id = %s ORDER BY time_create DESC LIMIT "+ str(1) + " OFFSET " + str(N-1), (user_id, user_id,))
-        lines = self.cursor.fetchall()
-        for row in lines:
+        for row in self.cursor.fetchall():
             Id = row[0]
             Way = row[1]
             Sum = row[2]
@@ -210,8 +207,7 @@ class BotDB:
 
     async def all_no_warned_checker(self, M):
         self.cursor.execute("SELECT id, num_win, warned, game FROM duel_room WHERE (num_win != " + str(0) + " AND warned = " + str(False) + ") UNION ALL SELECT id, num_win, warned, game FROM russ_room WHERE (num_win != " + str(0) + " AND warned = " + str(False) + ") UNION ALL SELECT id, num_win, warned, game FROM king_room WHERE (num_win != " + str(0) + " AND warned = " + str(False) + ") ORDER BY id ASC LIMIT 1 OFFSET " + str(M))
-        lines = self.cursor.fetchall()
-        for row in lines:
+        for row in self.cursor.fetchall():
             id = row[0]
             num_win = row[1]
             warned = row[2]
@@ -220,8 +216,7 @@ class BotDB:
 
     async def get_line_game(self, M):
         self.cursor.execute("SELECT id, game, num_win, time_create FROM duel_room UNION ALL SELECT id, game, num_win, time_create UNION ALL SELECT id, game, num_win, time_create FROM king_room ORDER BY id ASC LIMIT 1 OFFSET " + str(M))
-        lines = self.cursor.fetchall()
-        for row in lines:
+        for row in self.cursor.fetchall():
             id = row[0]
             game = row[1]
             num_win = row[2]
@@ -230,22 +225,24 @@ class BotDB:
 
     async def get_winner(self, id, game, num_win):
         self.cursor.execute("SELECT user" + str(num_win) + ", bet FROM " + game + "_room WHERE id = %s", (id,))
-        lines = self.cursor.fetchall()
-        for row in lines:
+        for row in self.cursor.fetchall():
             user_id = row[0]
             bet = row[1]
         return [user_id, bet]
 
     async def all_no_topup_checker(self, M):
         self.cursor.execute("SELECT int_pay, user_id, sum, accrued, done FROM payments WHERE done = " + str(False) + " ORDER BY int_pay ASC LIMIT 1 OFFSET " + str(M))
-        lines = self.cursor.fetchall()
-        for row in lines:
+        for row in self.cursor.fetchall():
             int_pay = row[0]
             user_id = row[1]
             sum = row[2]
             accrued = row[3]
             done = row[4]
         return [int_pay, user_id, sum, accrued, done]
+
+    async def get_withd_way(self, withd_id):
+        self.cursor.execute("SELECT way_with FROM withdraws WHERE int_wit = %s", (withd_id,))
+        return self.cursor.fetchone()[0]
 
     async def adm_check(self, user_id):
         self.cursor.execute("SELECT id FROM admins WHERE adm = %s", (user_id,))
@@ -255,6 +252,65 @@ class BotDB:
         self.cursor.execute("SELECT valid FROM admins WHERE adm = %s", (user_id,))
         return self.cursor.fetchone()[0]
 
+    async def adm_lvl_check(self, user_id):
+        self.cursor.execute("SELECT access_lvl FROM admins WHERE adm = %s", (user_id,))
+        return self.cursor.fetchone()[0]
+
+    async def adm_info_topup(self, id_pay):
+        self.cursor.execute("SELECT * FROM payments WHERE int_pay = %s", (id_pay,))
+        for row in self.cursor.fetchall():
+            Id = row[0]
+            User = row[1]
+            Way = row[2]
+            Sum = row[3]
+            Time_cr = row[4]
+            Accure = row[5]
+            Done = row[6]
+            Time_done = row[7]
+        return [Id, User, Way, Sum, Time_cr, Accure, Done, Time_done]
+
+    async def adm_info_withd(self, id_pay):
+        self.cursor.execute("SELECT * FROM withdraws WHERE int_wit = %s", (id_pay,))
+        for row in self.cursor.fetchall():
+            Id = row[0]
+            User = row[1]
+            Way = row[2]
+            Sum = row[3]
+            Time_cr = row[4]
+            Done = row[5]
+            Time_done = row[6]
+            Requisites = row[8]
+        return [Id, User, Way, Sum, Time_cr, Done, Time_done, Requisites]
+
+    async def adm_topup_true(self, trans_id):
+        self.cursor.execute("UPDATE payments SET accrued = True WHERE int_pay = %s", (trans_id,))
+        return self.conn.commit()
+
+    async def adm_withd_true(self, trans_id):
+        self.cursor.execute("UPDATE withdraws SET done = True, time_done = %s WHERE int_wit = %s", (str(datetime.now()), trans_id,))
+        return self.conn.commit()
+
+    async def find_username(self, user_id):
+        username_finder = "SELECT username FROM users WHERE user_id = %s", (user_id, )
+        self.cursor.execute(*username_finder)
+        return self.cursor.fetchone()[0]
+
+    async def update_withd(self, int_wit, way, requisites):
+        self.cursor.execute("UPDATE withdraws SET way_with = %s, requisites = %s  WHERE int_wit = %s", (way, requisites, int_wit,))
+        return self.conn.commit()
+
+    async def adm_user_info(self, user_id, arg):
+        self.cursor.execute(f"SELECT * FROM users WHERE {arg} = %s", (user_id,))
+        for row in self.cursor.fetchall():
+            Id = row[0]
+            User = row[1]
+            Way = row[2]
+            Sum = row[3]
+            Time_cr = row[4]
+            Accure = row[5]
+            Done = row[6]
+            Time_done = row[7]
+        return [Id, User, Way, Sum, Time_cr, Accure, Done, Time_done]
     def close(self):
         self.conn.close()
 

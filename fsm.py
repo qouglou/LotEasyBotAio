@@ -1,6 +1,9 @@
-from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
+
 
 class FSM(StatesGroup):
     requisites = State()
     other_sum = State()
+    accure_id_trans = State()
+    adm_new_requis = State()
+    enter_id_user = State()
