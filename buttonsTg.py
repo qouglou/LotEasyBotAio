@@ -6,6 +6,7 @@ import conf
 import random
 from texts import TextsTg as t
 from db import BotDB as db
+import games as g
 
 bot = Bot(token=conf.TOKEN)
 dp = Dispatcher(bot)
@@ -32,22 +33,20 @@ class ButtonsTg:
         await bot.send_message(user_id, t.m_baned, parse_mode="Markdown", reply_markup=types.InlineKeyboardMarkup().add(
             await self.button_support()))
 
-    async def ButtonCmdStart(self, user_id):
-        await bot.send_message(user_id, t.m_start_new,
-                               reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(
-                                   types.KeyboardButton("\U0001F680 Начать пользование")))
+    async def KB_Start(self):
+        return types.ReplyKeyboardMarkup(resize_keyboard=True).add(
+                                   types.KeyboardButton("\U0001F680 Начать пользование"))
 
     async def ButtonNotNew(self, user_id):
         await bot.send_message(user_id, t.m_hello_old,
                                reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(
                                    types.KeyboardButton("\U00002139 Меню")))
 
-    async def ButtonMenu(self, user_id):
-        await bot.send_message(user_id, t.m_you_in_menu,
-                               reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
-            "\U0001F464 Личный кабинет", "\U0001F3AE Игры", "\U00002139 Справка"))
+    async def KB_Menu(self):
+        return types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
+            "\U0001F464 Личный кабинет", "\U0001F3AE Игры", "\U00002139 Справка")
 
-    async def ButtonGameBet(self, game, user_id, msg_id, call_send=False):
+    async def KBT_GameBet(self, game):
         if game in ("\U0001F451 Королевская битва", "king"):
             game = "king"
             sh_t = t.m_bet_king
@@ -57,6 +56,16 @@ class ButtonsTg:
         elif game in ("\U0001F93A Дуэль", "duel"):
             game = "duel"
             sh_t = t.m_bet_duel
+        elif game in ("\U0001F3B3 Боулинг", "bowl"):
+            game = "bowl"
+            sh_t = t.m_bet_bowl
+        elif game in ("\U0001F3B2 Бросить кубик", "cube"):
+            game = "cube"
+            sh_t = t.m_bet_cube
+        elif game in ("\U0001F3B0 Крутить рулетку", "slot"):
+            game = "slot"
+            sh_t = t.m_bet_slot
+
         async def button_bet(emoji, bet):
             button = types.InlineKeyboardButton(f"{emoji} {bet} ₽", callback_data=f"bet_{game}_{format(bet, '06')}")
             return button
@@ -64,28 +73,62 @@ class ButtonsTg:
         b_100 = await button_bet("\U0001F4B5", 100)
         b_500 = await button_bet("\U0001F4B6", 500)
         b_1000 = await button_bet("\U0001F4B0", 1000)
-        b_que = types.InlineKeyboardButton('\U00002753 Справка', callback_data=f"que_{game}")
-        keyboard = types.InlineKeyboardMarkup(2).add(b_50, b_100, b_500, b_1000, b_que)
-        if call_send:
-            await bot.edit_message_text(sh_t, user_id, msg_id, reply_markup=keyboard, parse_mode="Markdown")
-        else:
-            await bot.send_message(user_id, sh_t, reply_markup=keyboard, parse_mode="Markdown")
+        keyboard = types.InlineKeyboardMarkup(2).add(b_50, b_100, b_500, b_1000)
+        if game in ("bowl", "cube", "slot"):
+            keyboard.row(types.InlineKeyboardButton("\U0001F4DD Другая сумма", callback_data=f"{game}_bet_other_sum"))
+        keyboard.row(types.InlineKeyboardButton('\U00002753 Справка', callback_data=f"que_{game}"))
+        return sh_t, keyboard
+    async def KB_MainGames(self):
+        return types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
+            "\U0001F680 Быстрая игра", "\U0001F4BB Онлайн", "\U00002B05 В меню")
 
-    async def ButtonMainGames(self, call_send, user_id, msg_id):
-        if call_send:
-            await bot.edit_message_text(t.m_games_choose, user_id, msg_id,
-                                        parse_mode="Markdown")
-        else:
-            await bot.send_message(user_id, t.m_games_choose,
-                                   reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
+    async def KB_OnlineGames(self):
+        return types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
             "\U0001F93A Дуэль", "\U0001F3B2 Русская рулетка",
-            "\U0001F451 Королевская битва", "\U00002B05 Вернуться в меню"))
+            "\U0001F451 Королевская битва", "\U00002B05 Назад")
 
-    async def ButtonInfo(self, user_id):
-        await bot.send_message(user_id, t.m_main_info,
-                               reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2).add(
+    async def KB_OfflineGames(self):
+        return types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
+            "\U0001F3B3 Боулинг", "\U0001F3B2 Бросить кубик",
+            "\U0001F3B0 Крутить рулетку", "\U00002B05 Назад")
+
+    async def KB_Info(self):
+        return types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2).add(
             "\U0001F4AC Комиссия", "\U0001F4AC Алгоритмы", "\U0001F4AC Правила",
-            "\U0001F4AC Поддержка", "\U00002B05 Вернуться в меню"), parse_mode="Markdown")
+            "\U0001F4AC Поддержка", "\U00002B05 В меню")
+
+    async def ButtonBetCheck(self, call, user_id=0, game="", sum=0):
+        keyboard = types.InlineKeyboardMarkup()
+        if call is not 0:
+            user_id = call.from_user.id
+            game = call.data[4:8]
+            sum = int(call.data[9:15].lstrip("0"))
+        if game == "king":
+            gline = "Королевская битва\U0001F451"
+        elif game == "russ":
+            gline = "Русская рулетка\U0001F3B2"
+        elif game == "duel":
+            gline = "Дуэль\U0001F93A"
+        elif game == "bowl":
+            gline = "Боулинг\U0001F3B3"
+        elif game == "cube":
+            gline = "Кубик\U0001F3B2"
+        elif game == "slot":
+            gline = "Рулетка\U0001F3B0"
+        if sum <= int(await db.get_user_balance(user_id)):
+            check_txt = (f"*Выбранные параметры:*\n\nИгра - *{gline}*\nСтавка - *{sum}₽\U0001F4B0*")
+            keyboard.add(types.InlineKeyboardButton('\U00002705 Подтвердить',
+                                                    callback_data=f"create_bet_{game}_{format(sum, '06')}"))
+        elif sum > await db.get_user_balance(user_id):
+            check_txt = (f"*Недостаточно средств:*\n\nБаланс - *{int(await db.get_user_balance(user_id))}₽*"
+                         f"\nСтавка - *{sum}₽*")
+            keyboard.add(types.InlineKeyboardButton('\U0001F4B5 Пополнить', callback_data=f"topup_balance_{game}"))
+        keyboard.add(types.InlineKeyboardButton('\U0000267B Изменить', callback_data='change_bet'))
+        if call != 0:
+            await bot.edit_message_text(check_txt, user_id, call.message.message_id, reply_markup=keyboard,
+                                        parse_mode="Markdown")
+        elif call == 0:
+            await bot.send_message(user_id, check_txt, reply_markup=keyboard, parse_mode="Markdown")
 
     async def ButtonSupport(self, user_id, id_pay, way_topup, msg_id):
         keyboard = types.InlineKeyboardMarkup().add(await self.button_support())
@@ -137,7 +180,7 @@ class ButtonsTg:
             await bot.delete_message(user_id, msg_id)
             await self.ButtonTopupAlreadyDone(user_id)
 
-    async def ButtonAccount(self, user_id, msg_id=0):
+    async def ButtonAccount(self, user_id):
         keyboard = types.InlineKeyboardMarkup(2)
         acc_info = f'*Мой аккаунт* \n\n\U0001F518 *Имя: *{await db.get_user_name(user_id)} ' \
                    f'\n\n\U0001F518*Баланс: *{int(await db.get_user_balance(user_id))}₽ ' \
@@ -146,12 +189,29 @@ class ButtonsTg:
                      types.InlineKeyboardButton("\U0001F4B8 Вывести", callback_data='withd_balance_main_'))
         keyboard.row(types.InlineKeyboardButton("\U0001F4D6 Операции", callback_data='story_topup_0_'))
         keyboard.row(types.InlineKeyboardButton("\U0001F3B2 История игр", callback_data='story_games_0_'))
-        if msg_id == 0:
-            await bot.send_message(user_id, acc_info, reply_markup=keyboard, parse_mode="Markdown")
-        else:
-            await bot.edit_message_text(acc_info, user_id, msg_id, reply_markup=keyboard, parse_mode="Markdown")
+        return acc_info, keyboard
 
-    async def GameProcess(self, user_id, game, sum, msg_id):
+    async def GameOffline(self, user_id, game, sum, msg_id):
+        await bot.delete_message(user_id, msg_id)
+        await db.withdraw_balance(user_id, sum)
+        sleep = 4
+        if game == "bowl":
+            msg = await bot.send_dice(user_id, emoji="\U0001F3B3")
+        elif game == "cube":
+            msg = await bot.send_dice(user_id, emoji="\U0001F3B2")
+        elif game == "slot":
+            sleep = 2
+            msg = await bot.send_dice(user_id, emoji="\U0001F3B0")
+        coef, text = await g.get_offline_values(game, msg.dice.value)
+        if coef > 0:
+            text += f"Ваш выигрыш составил *{format(float(sum)*coef, '.0f')}₽*!\n\nСыграйте еще!"
+            await db.topup_balance(user_id, float(sum)*coef)
+        await asyncio.sleep(sleep)
+        await bot.send_message(user_id, text, reply_markup=types.InlineKeyboardMarkup(1).add(
+            types.InlineKeyboardButton("\U0000267B Сыграть еще раз!", callback_data=f"create_bet_{game}_{sum}"),
+            await self.button_lk()), parse_mode="Markdown")
+
+    async def GameOnline(self, user_id, game, sum, msg_id):
         await db.withdraw_balance(user_id, sum)
         cur_user = 2
         if game == "king":
@@ -207,28 +267,35 @@ class ButtonsTg:
             enemy_found = "*\U00002705 Противники найдены!*\n\nНачинаем игру..."
         await bot.edit_message_text(enemy_found, user_id, msg_id, parse_mode="Markdown")
         await asyncio.sleep(3)
-        game_start = f"{gline[:1]}Игра началась\nВаше число - *{num_user}*\n\nПроисходит выбор числа\n\U000026AA"
-        await bot.edit_message_text(game_start, user_id, msg_id, parse_mode="Markdown")
-        N = 5
-        while N != 1:
-            await asyncio.sleep(1)
-            game_start += "\U000026AA"
-            await bot.edit_message_text(game_start, user_id, msg_id, parse_mode="Markdown")
-            N -= 1
+        msg = await bot.edit_message_text(f"{gline[:1]}Игра началась\nВаше число - *{num_user}*", user_id, msg_id, parse_mode="Markdown")
+        await asyncio.sleep(2)
         if await db.win_num_check(game, id_room) == 0:
             await db.win_num_in(game, random.randint(1, max_num_user), id_room)
+        await bot.delete_message(user_id, msg.message_id)
+        if await db.win_num_check(game, id_room) == 1:
+            sticker = "CAACAgEAAxkBAAJKXmP1-D61tx35vn4SJgdiRRxGBxn3AAI8CAAC43gEAAHaKiq0NcyVRi4E"
+        elif await db.win_num_check(game, id_room) == 2:
+            sticker = "CAACAgEAAxkBAAJKYGP1-RTUHflK7hudhgMyGsTGa3jgAAI9CAAC43gEAAFY6MYzUmo1jC4E"
+        elif await db.win_num_check(game, id_room) == 3:
+            sticker = "CAACAgEAAxkBAAJKnGP1-6gv9_SN3Aq_U3-fdF8aq3dbAAI-CAAC43gEAAHSR_gvg54YrS4E"
+        elif await db.win_num_check(game, id_room) == 4:
+            sticker = "CAACAgEAAxkBAAJKnmP1-7O2uYRtPNL51-KjiLHqBxBAAAI_CAAC43gEAAHP2s_5QyNoey4E"
+        elif await db.win_num_check(game, id_room) == 5:
+            sticker = "CAACAgEAAxkBAAJKoGP1-71SLKKzmLk_RXHrstmowCzdAAJACAAC43gEAAG79fTbfrFmui4E"
+        elif await db.win_num_check(game, id_room) == 6:
+            sticker ="CAACAgEAAxkBAAJKomP1-8Rz_wl2zODmzcgKUCeFGXtxAAJBCAAC43gEAAGJk5R3VlyCEy4E"
+        msg = await bot.send_sticker(user_id, sticker)
+        await asyncio.sleep(3.5)
+        await bot.delete_message(user_id, msg.message_id)
         if num_user == await db.win_num_check(game, id_room):
             line = f"\U0001F389 *Вы победили!*\n*Выпало число {await db.win_num_check(game, id_room)}*\n\nВаш выигрыш - *{int(sum) * 2}₽*\nПроверьте свою удачу еще раз!\n"
             await db.topup_balance(user_id, int(sum) * 2)
             await db.warned_winner(game, id_room)
         elif num_user != await db.win_num_check(game, id_room):
             line = f"\U0001F383 *Вы проиграли*\n*Выпало число {await db.win_num_check(game, id_room)}*\n\nПроверьте свою удачу еще раз!\n"
-        await bot.edit_message_text(line, user_id, msg_id, parse_mode="Markdown")
-        keyboard = types.InlineKeyboardMarkup(1)
-        key_again = types.InlineKeyboardButton('\U0000267B Попробовать еще раз',
-                                               callback_data=f"change_bet_{format(msg_id, '010')}")
-        keyboard.add(key_again, await self.button_lk())
-        await bot.edit_message_reply_markup(user_id, msg_id, reply_markup=keyboard)
+        await bot.send_message(user_id, line, parse_mode="Markdown", reply_markup=types.InlineKeyboardMarkup(1).add(
+            types.InlineKeyboardButton('\U0000267B Попробовать еще раз',
+                                               callback_data=f"bet_{game}_{sum}"), await self.button_lk()))
 
     async def bpmanag_no(self, user_id):
         await bot.send_message(user_id, t.m_manag_no, reply_markup=types.InlineKeyboardMarkup().add(
@@ -243,7 +310,7 @@ class ButtonsTg:
             await bot.send_message(adm_id, f"*Недостаточно прав.\n\nНеобходимо иметь уровень {need_lvl} и выше.*",
                 reply_markup=keyboard, parse_mode="Markdown")
 
-    async def bpmanag_main(self, user_id, msg_id):
+    async def bpmanag_main(self, user_id):
         keyboard = types.InlineKeyboardMarkup(2).add(types.InlineKeyboardButton("Транзакции", callback_data=f"control_transact"),
                                                      types.InlineKeyboardButton('Пользователи', callback_data=f"control_users"),
                                                      types.InlineKeyboardButton('Админы', callback_data=f"control_admin"))
@@ -257,14 +324,8 @@ class ButtonsTg:
             a_name = "Superuser \U0001F480"
         else:
             a_name = "Ошибка. Обратитесь к главному администратору \U000026A0"
-        if msg_id == 0:
-            await bot.send_message(user_id, f"*{t.m_manag_welcome}\n\nВаш ID - {user_id}\n"
-                                                  f"Уровень доступа - {await db.adm_lvl_check(user_id)} / {a_name}*",
-                                         reply_markup=keyboard, parse_mode="Markdown")
-        else:
-            await bot.edit_message_text(f"*{t.m_manag_welcome}\n\nВаш ID - {user_id}\n"
-                                                  f"Уровень доступа - {await db.adm_lvl_check(user_id)} / {a_name}*", user_id, msg_id,
-                                         reply_markup=keyboard, parse_mode="Markdown")
+        text = f"*{t.m_manag_welcome}\n\nВаш ID - {user_id}\nУровень доступа - {await db.adm_lvl_check(user_id)} / {a_name}*"
+        return text, keyboard
 
     async def bpmanag_no_valid(self, user_id, ex_adm, msg_id=0):
         keyboard = types.InlineKeyboardMarkup().add(await self.button_support())

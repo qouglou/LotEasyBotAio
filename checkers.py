@@ -27,7 +27,7 @@ class Checkers:
                     await bot.send_message(user_id, m_success_topup, "Markdown",
                                            reply_markup=types.InlineKeyboardMarkup(1).add(await b().button_lk()))
                 M += 1
-            await asyncio.sleep(10)
+            await asyncio.sleep(30)
 
     async def data_checker(self, mfu):
         if (await db.get_user_name(mfu.id) != mfu.first_name) or (
@@ -68,7 +68,7 @@ class Checkers:
                     await bot.send_message(user_id, line, "Markdown",
                                            reply_markup=types.InlineKeyboardMarkup(1).add(key_again, await b().button_lk()))
                 M += 1
-            await asyncio.sleep(10)
+            await asyncio.sleep(30)
 
 
 
