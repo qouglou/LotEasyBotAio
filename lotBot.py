@@ -4,6 +4,7 @@ from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher, FSMContext
 from aiogram.utils import executor
 import conf
+import logging
 from db import BotDB
 from texts import TextsTg as t
 from buttons import ButtonsTg as b
@@ -11,14 +12,18 @@ from fsm import FSM
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from checkers import Checkers as ch
 from messages import Messages as msg
-from games import Games as g
 
 
 db = BotDB('lotEasy.db')
 bot = Bot(token=conf.TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
-print("\nBot successfully started!")
-asyncio.gather(ch().topup_cheker_all(), ch().winner_warned_checker())
+logging.basicConfig(
+    level=logging.WARNING,
+    filename="difs/logs.log",
+    format="%(asctime)s %(levelname)s %(funcName)s %(message)s")
+logging.info("Bot successfully started!")
+if conf.ch_start:
+    asyncio.gather(ch().topup_cheker_all(), ch().winner_warned_checker())
 
 
 #Запуск бота
@@ -27,6 +32,7 @@ async def cmd_start(message: types.Message):
     if not await db.user_exists(message.from_user.id):
         await db.add_user(message.from_user.id, message.from_user.first_name,
                           message.from_user.last_name, message.from_user.username)
+        logging.info(f"User {message.from_user.id} start to use Bot with message {message}")
         await msg().rules_accept(message.from_user.id, True)
     await ch().data_checker(message.from_user)
     if await db.get_rules_accept(message.from_user.id) == 0:
@@ -42,8 +48,10 @@ async def adm_manage_cmd(message: types.Message):
             text, keyboard = await b().KBT_Bpmanag(message.from_user.id)
             await bot.send_message(message.from_user.id, text, reply_markup=keyboard, parse_mode="Markdown")
         else:
+            logging.warning(f"Not valid admin {message.from_user.id} tried to get access to admin panel with message - {message}")
             await msg().adm_no_valid(message.from_user.id, False)
     else:
+        logging.warning(f"User {message.from_user.id} tried to get access to admin panel with message - {message}")
         await msg().bpmanag_no(message.from_user.id)
 
 
@@ -55,8 +63,10 @@ async def adm_manage_call(call):
             text, keyboard = await b().KBT_Bpmanag(call.from_user.id)
             await bot.edit_message_text(text, call.from_user.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
         else:
+            logging.warning(f"Not valid admin {call.from_user.id} tried to get access to admin panel with call - {call}")
             await msg().adm_no_valid(call.from_user.id, True, call.message.message_id)
     else:
+        logging.warning(f"User {call.from_user.id} tried to get access to admin panel with message - {call}")
         await msg().bpmanag_no(call.from_user.id)
 
 
@@ -127,35 +137,39 @@ async def back_games(call):
         await bot.edit_message_text(text, call.from_user.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
 
 
-#Вывод списка операций. Переход из ЛК или выбора отображения всех операций. Запрос типа "story_topup_количество(0 - 10 шт, 1 - все)"
+#Вывод списка операций. Переход из ЛК или кнопок вперед/назад. Имеет пагинацию"
 @dp.callback_query_handler(lambda call: call.data[:12] == "story_topup_")
 async def story_oper(call):
     user_id = call.from_user.id
     if await ch().rules_checker(user_id) == (True, False):
         N = conf.base_num
         count_lines = await db.get_topup_lines(user_id) + await db.get_withd_lines(user_id)
-        current_page = int(call.data[12:])
-        if count_lines % N != 0:
-            max_page = count_lines // N + 1
-        else:
-            max_page = count_lines // N
+
         keyboard = types.InlineKeyboardMarkup(3)
         if count_lines == 0:
             keyboard.add(await b().BT_Close())
             await bot.send_message(user_id, "*У вас пока что нет операций*", reply_markup=keyboard, parse_mode="Markdown")
         else:
-            if current_page == max_page and current_page != 1:
-                N = count_lines % ((current_page - 1) * N)
-            if count_lines < conf.base_num:
+            current_page = int(call.data[12:])
+            if count_lines > conf.base_num:
+                if count_lines % N != 0:
+                    max_page = count_lines // N + 1
+                else:
+                    max_page = count_lines // N
+            else:
                 max_page = 1
                 N = count_lines
+            if current_page == max_page and current_page != 1:
+                N = count_lines % ((current_page - 1) * N)
             dateold = None
             story_topup = f"*Всего операций - {count_lines}\nОперации с {(current_page-1)*conf.base_num+1} по {(current_page-1) * conf.base_num + N}:*\n"
             while N != 0:
-                if count_lines > conf.base_num and current_page != max_page:
-                    num_from = current_page * conf.base_num - N + 1
-                elif current_page == max_page:
+                if count_lines < conf.base_num:
                     num_from = N
+                elif current_page != max_page:
+                    num_from = current_page * conf.base_num - N + 1
+                else:
+                    num_from = current_page * conf.base_num - conf.base_num + N
                 comm, way, sum, done, oper, time_cr = [str(x) for x in await db.get_story(user_id, num_from)]
                 if oper == "Вывод":
                     requisites = await db.get_requisites(comm)
@@ -232,7 +246,7 @@ async def info_topup(call):
                                         callback_data=f"check_topup_{way_topup}_{format(get_comm, '7')}")), parse_mode="Markdown")
 
 
-#Ручной ввод суммы пополнения или вывода. После выбора ручного ввода. Запрос типа "способ(04)_операция(05)_other_sum" qiwi_topup_other_sum
+#Ручной ввод суммы пополнения/вывода или ставки. После выбора ручного ввода. Запрос типа "способ(04)_операция(05)_other_sum" или игра(04)_bet_other_sum
 @dp.callback_query_handler(lambda call: call.data[10:20] == "_other_sum" or call.data[4:20] == "_bet_other_sum")
 async def enter_sum_topup(call, state: FSMContext):
     if await ch().rules_checker(call.from_user.id) == (True, False):
@@ -267,7 +281,7 @@ async def check_topup(call):
     if await ch().rules_checker(call.from_user.id) == (True, False):
         if call.data[:12] == "check_topup_": N=0
         elif call.data[:14] == "recheck_topup_": N=2
-        await b().ButtonTopupCheck(call.from_user.id, call.data[12+N:16+N], call.data[17+N:24+N].lstrip("0"),
+        await ch().topup_checker_user(call.from_user.id, call.data[12+N:16+N], call.data[17+N:24+N].lstrip("0"),
                                    call.message.message_id)
 
 
@@ -311,7 +325,7 @@ async def creating_room(call):
 
 
 #История игр
-@dp.callback_query_handler(lambda call: call.data[:14] == "story_games_0_")
+@dp.callback_query_handler(lambda call: call.data[:14] == "story_games_1_")
 async def story_games(call):
     await bot.send_message(call.from_user.id, "*Раздел в разработке*",
                            reply_markup=types.InlineKeyboardMarkup().add(await b().BT_Close()), parse_mode="Markdown")
@@ -324,6 +338,8 @@ async def user_get_requisites(message: types.Message, state: FSMContext):
     sum = (await state.get_data())['sum_with']
     keyboard = types.InlineKeyboardMarkup()
     try:
+        if not message.text.isdigit():
+            raise
         if ((way == "qiwi") and ((len(str(message.text)) != 11) or (message.text[:1] != "7"))) or (way == "bank") and (len(message.text) != 16):
             if (way == "qiwi") and (len(str(message.text)) != 11):
                 txt_wrong = "*Неверная длина номера телефона.*\n\nНажмите на кнопку ниже и введите номер телефона еще раз"
@@ -350,6 +366,7 @@ async def user_get_requisites(message: types.Message, state: FSMContext):
                                                          f"\nСпособ - *{lineway}*\n{req}{message.text}*",
                                    reply_markup=keyboard, parse_mode="Markdown")
     except:
+        logging.info(f"User {message.from_user.id} tried to enter requisites {message.text}")
         keyboard.add(types.InlineKeyboardButton('\U0000267B Ввести заново',
                                                         callback_data=f"{way}_withd_sum_{format(sum, '06')}"),
                      await b().BT_Lk())
@@ -410,6 +427,8 @@ async def user_other_sum_enter(message, state: FSMContext):
         b_enter_again = types.InlineKeyboardButton('\U0000267B Ввести заново',
                                                    callback_data=f"{game}_bet_other_sum")
     try:
+        if not message.text.isdigit():
+            raise
         if (int(message.text) > max_sum) or (int(message.text) < min_sum):
             keyboard.add(b_enter_again, await b().BT_Lk())
             if int(message.text) > max_sum:
@@ -432,6 +451,7 @@ async def user_other_sum_enter(message, state: FSMContext):
             elif (await state.get_data())['type'] == "bet":
                 await ch().bet_sum_checker(0, message.from_user.id, game, int(message.text))
     except:
+        logging.info(f"User {message.from_user.id} tried to enter sum of {(await state.get_data())['type']} - {message.text}")
         keyboard.add(b_enter_again, await b().BT_Lk())
         await bot.send_message(message.from_user.id, "*Неверный формат числа. *"
                                                           "\n\nВыберите одно из действий",
@@ -471,8 +491,11 @@ async def change_trans_type(call):
                                                         callback_data=f"adm_accure_{trans_type}_{trans_id}"),
                                                 await b().BT_AdmLk()), parse_mode="Markdown")
         else:
+            logging.warning(f"Admin {call.from_user.id} with access {await db.adm_lvl_check(adm_id)} tried to get "
+                            f"access to admin functionality with call - {call}")
             await msg().no_access(adm_id, "1 (Middle)", call.message.message_id)
     else:
+        logging.warning(f"Not valid admin {call.from_user.id} tried to get access to admin panel with call - {call}")
         await msg().adm_no_valid(adm_id, True, call.message.message_id)
 
 
@@ -486,6 +509,7 @@ async def choose_trans_type(call):
                 types.InlineKeyboardButton('Вывод', callback_data=f"accure_withd"),
                 await b().BT_AdmLk("\U00002B05")))
     else:
+        logging.warning(f"Not valid admin {call.from_user.id} tried to get access to admin panel with call - {call}")
         await msg().adm_no_valid(call.from_user.id, True, call.message.message_id)
 
 
@@ -496,6 +520,7 @@ async def enter_user(call, state: FSMContext):
         await state.update_data(id_adm=call.from_user.id)
         await FSM.enter_id_user.set()
     else:
+        logging.warning(f"Not valid admin {call.from_user.id} tried to get access to admin panel with call - {call}")
         await msg().adm_no_valid(call.from_user.id, True, call.message.message_id)
 
 
@@ -515,6 +540,7 @@ async def get_id_trans(message: types.Message, state: FSMContext):
                                parse_mode="Markdown")
     await state.finish()
 
+
 # Админский обработчик ручного ввода номера транзакции. Запрос типа accure_тип транзакции(05)
 @dp.callback_query_handler(lambda call: call.data[:7] == "accure_")
 async def accure_trans(call, state: FSMContext):
@@ -526,6 +552,7 @@ async def accure_trans(call, state: FSMContext):
         await state.update_data(id_adm=call.from_user.id, trans_type=call.data[7:12])
         await FSM.accure_id_trans.set()
     else:
+        logging.warning(f"Not valid admin {call.from_user.id} tried to get access to admin panel with call - {call}")
         await msg().adm_no_valid(call.from_user.id, True, call.message.message_id)
 
 
@@ -545,8 +572,11 @@ async def change_withd_way(call):
                                               call.message.message_id, reply_markup=types.InlineKeyboardMarkup(1).add(
                     button_another_way, await b().BT_AdmLk()), parse_mode="Markdown")
         else:
-            await b().no_access(call.from_user.id, "2 (Master)", call.message.message_id)
+            logging.warning(f"Admin {call.from_user.id} with access {await db.adm_lvl_check(call.from_user.id)} tried to get "
+                            f"access to admin functionality with call - {call}")
+            await msg().no_access(call.from_user.id, "2 (Master)", call.message.message_id)
     else:
+        logging.warning(f"Not valid admin {call.from_user.id} tried to get access to admin panel with call - {call}")
         await msg().adm_no_valid(call.from_user.id, True, call.message.message_id)
 
 
@@ -561,8 +591,11 @@ async def get_new_req(call, state: FSMContext):
                                     old_way=await db.get_withd_way(call.data[22:]), with_id=call.data[22:])
             await FSM.adm_new_requis.set()
         else:
-            await b().no_access(call.from_user.id, "2 (Master)", call.message.message_id)
+            logging.warning(f"Admin {call.from_user.id} with access {await db.adm_lvl_check(adm_id)} tried to get "
+                            f"access to admin functionality with call - {call}")
+            await msg().no_access(call.from_user.id, "2 (Master)", call.message.message_id)
     else:
+        logging.warning(f"Not valid admin {call.from_user.id} tried to get access to admin panel with call - {call}")
         await msg().adm_no_valid(call.from_user.id, True, call.message.message_id)
 
 
@@ -576,6 +609,8 @@ async def get_id_trans(message: types.Message, state: FSMContext):
     if await db.adm_valid_check(adm_id):
         if await db.adm_lvl_check(adm_id) > conf.middle_lvl:
             try:
+                if not message.text.isdigit():
+                    raise
                 new_req = int(message.text)
                 if data['new_way'] == "bank":
                     if len(new_req) != 16:
@@ -601,8 +636,11 @@ async def get_id_trans(message: types.Message, state: FSMContext):
                              await b().BT_AdmLk())
                 await bot.send_message(adm_id, "*Неверные реквизиты\n\nВыберите одно из действий:*", reply_markup=keyboard, parse_mode="Markdown")
         else:
-            await b().no_access(adm_id, "2 (Master)")
+            logging.warning(f"Admin {message.from_user.id} with access {await db.adm_lvl_check(adm_id)} tried to get "
+                            f"access to admin functionality with message - {message}")
+            await msg().no_access(adm_id, "2 (Master)")
     else:
+        logging.warning(f"Not valid admin {message.from_user.id} tried to get access to admin panel with call - {message}")
         await msg().adm_no_valid(adm_id, False)
     await state.finish()
 
@@ -625,8 +663,11 @@ async def change_withd_way(call):
                                                callback_data="control_transact"),
                     await b().BT_AdmLk()), parse_mode="Markdown")
         else:
-            await b().no_access(call.from_user.id, "2 (Master)", call.message.message_id)
+            logging.warning(f"Admin {call.from_user.id} with access {await db.adm_lvl_check(call.from_user.id)} tried to get "
+                            f"access to admin functionality with call - {call}")
+            await msg().no_access(call.from_user.id, "2 (Master)", call.message.message_id)
     else:
+        logging.warning(f"Not valid admin {call.from_user.id} tried to get access to admin panel with call - {call}")
         await msg().adm_no_valid(call.from_user.id, False)
 
 
@@ -640,7 +681,8 @@ async def get_id_trans(message: types.Message, state: FSMContext):
     b_adm_trans = types.InlineKeyboardButton('\U0000267B Другая транзакция',
                                              callback_data="control_transact")
     try:
-        int(message.text)
+        if not message.text.isdigit():
+            raise
         if await db.adm_valid_check(id_adm):
             if 0 < int(message.text) < 100000:
                 if trans_type == "topup":
@@ -704,6 +746,7 @@ async def get_id_trans(message: types.Message, state: FSMContext):
             else:
                 raise
         else:
+            logging.warning(f"Not valid admin {message.from_user.id} tried to get access to admin panel with call - {message}")
             await msg().adm_no_valid(id_adm, False)
     except:
         keyboard.add(b_adm_trans, await b().BT_AdmLk())

@@ -10,6 +10,9 @@ middle_lvl = 1
 master_lvl = 2
 superuser_lvl = 3
 
+#checkers start
+ch_start = True
+
 #story topup
 base_num = 5
 
@@ -42,3 +45,4 @@ slot_7_2 = 2
 slot_7_1 = 1.5
 #24/64
 slot_diff = 0.4
+

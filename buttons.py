@@ -86,7 +86,12 @@ class ButtonsTg:
 
     async def ButtonTopupCheck(self, user_id, way_topup, id_pay, msg_id):
         if await db.get_topup_accured(id_pay) == 0:
-            await self.ButtonSupport(user_id, id_pay, way_topup, msg_id)
+            await bot.edit_message_text("*Транзакция не найдена.*\n\nПроверьте перевод еще раз, либо обратитесь к поддержке",
+                                        user_id, msg_id, reply_markup=
+                                        types.InlineKeyboardMarkup(1).add(await self.BT_Support(),
+                                                                          types.InlineKeyboardButton(
+                                                                              '\U0000267B Проверить еще раз',
+                                                                              callback_data=f"check_topup_{way_topup}_{format(id_pay, '7')}", parse_mode="Markdown")))
         elif (await db.get_topup_accured(id_pay) == 1) & (
                 await db.get_topup_done(id_pay) == 0):
             await db.topup_balance(user_id, await db.get_topup_sum(id_pay))

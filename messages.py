@@ -24,7 +24,7 @@ class Messages:
                                    "\U00002705 Принять правила", "\U0001F4D5 Правила"))
 
     async def no_access(self, adm_id, need_lvl, msg_id=False):
-        keyboard = types.InlineKeyboardMarkup().add(await b().BT_adm_lk())
+        keyboard = types.InlineKeyboardMarkup().add(await b().BT_AdmLk())
         if msg_id:
             await bot.edit_message_text(f"*Недостаточно прав. \n\nНеобходимо иметь уровень {need_lvl} и выше.*",
                                           adm_id, msg_id, reply_markup=keyboard, parse_mode="Markdown")
@@ -34,10 +34,10 @@ class Messages:
 
     async def bpmanag_no(self, user_id):
         await bot.send_message(user_id, "Нет доступа", reply_markup=types.InlineKeyboardMarkup().add(
-            await self.BT_close()), parse_mode="Markdown")
+            await b().BT_Close()), parse_mode="Markdown")
 
     async def adm_no_valid(self, user_id, ex_adm, msg_id=0):
-        keyboard = types.InlineKeyboardMarkup().add(await b().BT_support())
+        keyboard = types.InlineKeyboardMarkup().add(await b().BT_Support())
         if ex_adm:
             await bot.edit_message_text("*Нет доступа.* \n\nЕсли это ошибка, вы можете связаться с главным админом",
                                         user_id, msg_id, reply_markup=keyboard, parse_mode="Markdown")
