@@ -11,8 +11,7 @@ master_lvl = 2
 superuser_lvl = 3
 
 #story topup
-base_num = 10
-extended_num = 20
+base_num = 5
 
 #max and min sums
 max_tw = 10000

@@ -164,8 +164,8 @@ class BotDB:
                             (msg_id, user_id, msg_data))
         return self.conn.commit()
 
-    async def get_story(self, user_id, N):
-        self.cursor.execute("SELECT int_pay, way_topup, sum, done, oper, time_create FROM payments WHERE user_id = %s UNION ALL SELECT int_wit, way_with, sum, done, oper, time_create FROM withdraws WHERE user_id = %s ORDER BY time_create DESC LIMIT "+ str(1) + " OFFSET " + str(N-1), (user_id, user_id,))
+    async def get_story(self, user_id, num_from):
+        self.cursor.execute("SELECT int_pay, way_topup, sum, done, oper, time_create FROM payments WHERE user_id = %s UNION ALL SELECT int_wit, way_with, sum, done, oper, time_create FROM withdraws WHERE user_id = %s ORDER BY time_create DESC OFFSET "+ str(num_from-1) + "ROWS FETCH NEXT 1 ROWS ONLY", (user_id, user_id,))
         return [row for row in self.cursor.fetchone()]
 
     async def get_lines_no_topup(self):
