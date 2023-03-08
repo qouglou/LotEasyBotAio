@@ -65,7 +65,8 @@ class Games:
 
     async def games_offline(self, user_id, game, sum, msg_id):
         await bot.delete_message(user_id, msg_id)
-        await db.withdraw_balance(user_id, sum)
+        await db.set_withdraw_balance(user_id, sum)
+        await db.add_offline_game(game, user_id, sum)
         sleep = 4
         if game == "bowl":
             msg = await bot.send_dice(user_id, emoji="\U0001F3B3")
@@ -74,17 +75,26 @@ class Games:
         elif game == "slot":
             sleep = 2
             msg = await bot.send_dice(user_id, emoji="\U0001F3B0")
+        id_room = await db.offline_game_get_id(game, user_id, sum)
         coef, text = await self.get_offline_values(game, msg.dice.value)
-        if coef > 0:
-            text += f"Ваш выигрыш составил *{format(float(sum)*coef, '.0f')}₽*!\n\nСыграйте еще!"
-            await db.topup_balance(user_id, float(sum)*coef)
-        await asyncio.sleep(sleep)
-        await bot.send_message(user_id, text, reply_markup=types.InlineKeyboardMarkup(1).add(
-            types.InlineKeyboardButton("\U0000267B Сыграть еще раз!", callback_data=f"create_bet_{game}_{format(sum, '06')}"),
-            await b().BT_Lk()), parse_mode="Markdown")
+        if await db.win_num_check("offl", id_room) == 0:
+            await db.set_topup_balance(user_id, float(sum) * coef)
+            await db.offline_win_num_in(int(msg.dice.value), id_room)
+            if coef > 0:
+                text += f"Ваш выигрыш составил *{format(float(sum)*coef, '.0f')}₽*!\n\nСыграйте еще!"
+            await asyncio.sleep(sleep)
+            await bot.send_message(user_id, text, reply_markup=types.InlineKeyboardMarkup(1).add(
+                types.InlineKeyboardButton("\U0000267B Сыграть еще раз!", callback_data=f"create_bet_{game}_{format(sum, '06')}"),
+                await b().BT_Lk()), parse_mode="Markdown")
+            await db.warned_winner("offl", id_room)
+        else:
+            await bot.send_message(user_id, "*Игра уже была сыграна\n\nЕсли вы не получили уведомления о результате,"
+                                            "а ваш баланс не изменился, подождите 5 минут. \nЕсли в течении данного времени "
+                                            "вы не получите уведомления, обратитесь в поддержку.*", reply_markup=types.InlineKeyboardMarkup(1).add(
+                await b().BT_Support(), await b().BT_Lk()), parse_mode="Markdown")
 
     async def games_online(self, user_id, game, sum, msg_id):
-        await db.withdraw_balance(user_id, sum)
+        await db.set_withdraw_balance(user_id, sum)
         cur_user = 2
         if game == "king":
             gline = "\U0001F451 Королевская битва"
@@ -101,7 +111,7 @@ class Games:
                 break
             cur_user += 1
         if free_room is None:
-            await db.game_create(game, user_id, sum)
+            await db.add_online_game(game, user_id, sum)
             num_user = 1
         elif free_room is not None:
             if ((game == "duel") or (game =="russ")) and (cur_user == max_num_user):
@@ -157,7 +167,7 @@ class Games:
         await bot.delete_message(user_id, msg.message_id)
         if num_user == await db.win_num_check(game, id_room):
             line = f"\U0001F389 *Вы победили!*\n*Выпало число {await db.win_num_check(game, id_room)}*\n\nВаш выигрыш - *{int(sum) * 2}₽*\nПроверьте свою удачу еще раз!\n"
-            await db.topup_balance(user_id, int(sum) * 2)
+            await db.set_topup_balance(user_id, int(sum) * 2)
             await db.warned_winner(game, id_room)
         elif num_user != await db.win_num_check(game, id_room):
             line = f"\U0001F383 *Вы проиграли*\n*Выпало число {await db.win_num_check(game, id_room)}*\n\nПроверьте свою удачу еще раз!\n"

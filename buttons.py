@@ -17,16 +17,19 @@ class ButtonsTg:
                                    types.KeyboardButton("\U0001F680 Начать пользование"))
 
     async def KB_Menu(self):
-        return types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
+        return types.ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True, row_width=1).add(
             "\U0001F464 Личный кабинет", "\U0001F3AE Игры", "\U00002139 Справка")
 
-    async def KB_Sum(self, type, key, way="", fr=""):
+    async def KB_Sum(self, type, key, way="", from_where=""):
         async def BT_sum(type, key, way, emoji, sum):
             if type == "game":
                 button = types.InlineKeyboardButton(f"{emoji} {sum} ₽", callback_data=f"bet_{key}_{format(sum, '06')}")
             elif type == "oper":
                 button = types.InlineKeyboardButton(f"{emoji} {sum} ₽",
                                                   callback_data=f"{way}_{key}_sum_{format(sum, '06')}")
+            elif type == "admin":
+                button = types.InlineKeyboardButton(f"{emoji} {sum} ₽",
+                                                  callback_data=f"adm_change_balance_{way}_{format(sum, '06')}_{key}")
             return button
         b_50 = await BT_sum(type, key, way, "\U0001F4B4", 50)
         b_100 = await BT_sum(type, key, way, "\U0001F4B5", 100)
@@ -41,7 +44,13 @@ class ButtonsTg:
             keyboard.row(types.InlineKeyboardButton('\U0001F4DD Другая сумма',
                                                  callback_data=f"{way}_{key}_other_sum"))
             keyboard.row(types.InlineKeyboardButton('\U00002B05 Назад',
-                                                     callback_data=f"{key}_balance_{fr}"))
+                                                     callback_data=f"{key}_balance_{from_where}"))
+        elif type == "admin":
+            keyboard.row(types.InlineKeyboardButton('\U0001F4DD Другая сумма',
+                                                 callback_data=f"chk_change_balance_{way}_other_{key}"))
+            keyboard.row(types.InlineKeyboardButton('\U00002B05 Назад',
+                                                     callback_data=f"chk_change_balance_{key}"))
+            keyboard.row(await self.BT_AdmLk())
         return keyboard
 
     async def KBT_GameBet(self, game):
@@ -66,21 +75,21 @@ class ButtonsTg:
         return sh_t, await self.KB_Sum("game", game)
 
     async def KB_MainGames(self):
-        return types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
+        return types.ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True, row_width=1).add(
             "\U0001F680 Быстрая игра", "\U0001F4BB Онлайн", "\U00002B05 В меню")
 
     async def KB_OnlineGames(self):
-        return types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
+        return types.ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True,  row_width=1).add(
             "\U0001F93A Дуэль", "\U0001F3B2 Русская рулетка",
             "\U0001F451 Королевская битва", "\U00002B05 Назад")
 
     async def KB_OfflineGames(self):
-        return types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
+        return types.ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True,  row_width=1).add(
             "\U0001F3B3 Боулинг", "\U0001F3B2 Бросить кубик",
             "\U0001F3B0 Крутить рулетку", "\U00002B05 Назад")
 
     async def KB_Info(self):
-        return types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2).add(
+        return types.ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True,  row_width=2).add(
             "\U0001F4AC Комиссия", "\U0001F4AC Алгоритмы", "\U0001F4AC Правила",
             "\U0001F4AC Поддержка", "\U00002B05 В меню")
 
@@ -94,7 +103,7 @@ class ButtonsTg:
                                                                               callback_data=f"check_topup_{way_topup}_{format(id_pay, '7')}", parse_mode="Markdown")))
         elif (await db.get_topup_accured(id_pay) == 1) & (
                 await db.get_topup_done(id_pay) == 0):
-            await db.topup_balance(user_id, await db.get_topup_sum(id_pay))
+            await db.set_topup_balance(user_id, await db.get_topup_sum(id_pay))
             await db.set_topup_done(id_pay)
             m_success_topup = (f"\U00002705 *Транзакция успешно выполнена!*"
                                f"\n\n*Ваш баланс:*\n{int(await db.get_user_balance(user_id))}₽")
@@ -115,7 +124,7 @@ class ButtonsTg:
                    f'\n\n\U0001F518*Дата регистрации: *{str(await db.get_user_date(user_id))[:10]}'
         keyboard.add(types.InlineKeyboardButton('\U0001F4B5 Пополнить', callback_data='topup_balance_main_'),
                      types.InlineKeyboardButton("\U0001F4B8 Вывести", callback_data='withd_balance_main_'))
-        keyboard.row(types.InlineKeyboardButton("\U0001F4D6 Операции", callback_data='story_topup_1'))
+        keyboard.row(types.InlineKeyboardButton("\U0001F4D6 Операции", callback_data='story_topup_0000001_'))
         keyboard.row(types.InlineKeyboardButton("\U0001F3B2 История игр", callback_data='story_games_1_'))
         return acc_info, keyboard
 

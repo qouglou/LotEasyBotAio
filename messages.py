@@ -3,11 +3,9 @@ import asyncio
 from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher
 import conf
-from db import BotDB as database
 from buttons import ButtonsTg as b
 bot = Bot(token=conf.TOKEN)
 dp = Dispatcher(bot)
-db = database('lotEasy.db')
 
 
 class Messages:
@@ -46,6 +44,6 @@ class Messages:
                                    reply_markup=keyboard, parse_mode="Markdown")
 
     async def not_new(self, user_id):
-        await bot.send_message(user_id, "\U0001F450 Рады видеть вас снова!",
+        await bot.send_message(user_id, f"\U0001F450 Рады видеть вас снова!",
                                reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(
                                    types.KeyboardButton("\U00002139 Меню")))

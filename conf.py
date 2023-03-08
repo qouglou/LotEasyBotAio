@@ -21,6 +21,8 @@ max_tw = 10000
 min_tw = 50
 max_bet = 1000
 min_bet = 10
+max_adm = 100000
+min_adm = 1
 
 #games_coefficients
 #bowling Mathematical expectation - 0,95

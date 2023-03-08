@@ -20,14 +20,14 @@ logging.basicConfig(
 class Checkers:
 
     async def topup_cheker_all(self):
-        logging.info(f"Topup checker is successfully  started")
+        logging.warning(f"Topup checker is successfully  started")
         while True:
-            logging.info(f"Lines not done topups - {await db.get_lines_no_topup()}")
+            logging.warning(f"Lines not done topups - {await db.get_lines_no_topup()}")
             M = 0
             while M < int(await db.get_lines_no_topup()):
-                int_pay, user_id, sum, accrued, done = await db.all_no_topup_checker(M)
+                int_pay, user_id, sum, accrued, done = await db.all_no_topup_checker()
                 if accrued and done is False:
-                    await db.topup_balance(user_id, sum)
+                    await db.set_topup_balance(user_id, sum)
                     await db.set_topup_done(int_pay)
                     logging.info(f"User {user_id} is automatically warned about his success topup №{int_pay}")
                     m_success_topup = (f"\U00002705 *Пополнение №{int_pay} успешно выполнено!*"
@@ -53,7 +53,7 @@ class Checkers:
                                                   callback_data=f"check_topup_{way_topup}_{format(id_pay, '7')}")), parse_mode="Markdown")
         elif (await db.get_topup_accured(id_pay) == 1) & (
                 await db.get_topup_done(id_pay) == 0):
-            await db.topup_balance(user_id, await db.get_topup_sum(id_pay))
+            await db.set_topup_balance(user_id, await db.get_topup_sum(id_pay))
             await db.set_topup_done(id_pay)
             logging.info(f"User {user_id} successfully get his topup №{id_pay}")
             m_success_topup = (f"\U00002705 *Транзакция успешно выполнена!*"
@@ -118,14 +118,14 @@ class Checkers:
         if not await db.get_rules_accept(user_id):
             logging.warning(f"User {user_id} tried to use Bot without rules accepting")
             await bot.send_message(user_id,
-                                   "Вы не можете пользоваться ботом, пока не приняли правила",
+                                   "*Вы не можете пользоваться ботом, пока не приняли правила*",
                                    parse_mode="Markdown",
                                    reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
                                        types.KeyboardButton("\U0001F4D5 Правила"), types.KeyboardButton("\U00002705 Принять правила")
                                    ))
         elif await db.get_ban(user_id):
             logging.warning(f"User {user_id} tried to use Bot with ban")
-            await bot.send_message(user_id, "Вы заблокированы \n\nДля возможного снятия блокировки вы можете связаться с поддержкой", parse_mode="Markdown",
+            await bot.send_message(user_id, "*Вы заблокированы \n\nДля возможного снятия блокировки вы можете связаться с поддержкой*", parse_mode="Markdown",
                                    reply_markup=types.InlineKeyboardMarkup().add(
                                        await b().BT_Support()))
         return await db.get_rules_accept(user_id), await db.get_ban(user_id)
@@ -139,17 +139,24 @@ class Checkers:
             while M < count_lines:
                 id_game, num_win, warned, game = [x for x in await db.all_no_warned_checker(M)]
                 g_line = {
-                    "Дуэль": "duel",
-                    "Русская рулетка": "russ",
-                    "Королевская битва": "king"
+                    "duel": "Дуэль",
+                    "russ": "Русская рулетка",
+                    "king": "Королевская битва",
+                    "bowl": "Боулинг",
+                    "cube": "Кубик",
+                    "slot": "Рулетка"
                 }[game]
-                if (num_win != 0) and (warned is False):
-                    logging.info(f"User {user_id} is warned automatically about his win in game {g_line} №{id_game}")
-                    user_id, bet = [x for x in await db.get_winner(id_game, g_line, num_win)]
-                    line = f"\U0001F389 *Вы победили в игре *\n{game} №{id_game}"\
-                           f"\nВаш выигрыш - *{bet}₽*\nПроверьте свою удачу еще раз!\n"
-                    await db.topup_balance(user_id, bet)
-                    await db.warned_winner(g_line, id_game)
+                if num_win != 0 and warned is False:
+                    if game in ("duel", "russ", "king"):
+                        user_id, bet = [x for x in await db.get_winner(id_game, game, num_win)]
+                        line = f"\U0001F389 *Вы победили в игре *\n{g_line} №{id_game}"\
+                               f"\nВаш выигрыш - *{bet}₽*\nПроверьте свою удачу еще раз!\n"
+                        await db.warned_winner(g_line, id_game)
+                        await db.set_topup_balance(user_id, bet)
+                    elif game in ("bowl", "cube", "slot"):
+                        user_id, bet = [x for x in await db.get_winner(id_game, "offl", "_id")]
+                        line = f"\U00002755 *Расчет за игру {g_line} №{id_game} был произведен*"
+                        await db.warned_winner("offl", id_game)
                     key_again = types.InlineKeyboardButton(text='\U0000267B Попробовать еще раз',
                                                            callback_data='change_bet')
                     await bot.send_message(user_id, line, "Markdown",
