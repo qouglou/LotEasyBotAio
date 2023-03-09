@@ -211,8 +211,8 @@ class BotDB:
         self.cursor.execute("SELECT user" + str(num_win) + ", bet FROM " + game + "_room WHERE id = %s", (id_room,))
         return [row for row in self.cursor.fetchone()]
 
-    async def all_no_topup_checker(self):
-        self.cursor.execute("SELECT int_pay, user_id, sum, accrued, done FROM payments WHERE done = False ORDER BY int_pay ASC LIMIT 1 OFFSET 0")
+    async def all_no_topup_checker(self, line):
+        self.cursor.execute("SELECT int_pay, user_id, sum, accrued, done FROM payments WHERE done = False ORDER BY int_pay ASC OFFSET "+ str(line) + "ROWS FETCH NEXT 1 ROWS ONLY")
         return [row for row in self.cursor.fetchone()]
 
     async def get_withd_way(self, withd_id):

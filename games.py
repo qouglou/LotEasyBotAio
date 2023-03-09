@@ -1,14 +1,14 @@
 import asyncio
 
-from aiogram import Bot, types
-from aiogram.dispatcher import Dispatcher
+from aiogram import Bot, types, Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
 import conf
 import random
 from db import BotDB as db
 from buttons import ButtonsTg as b
 
 bot = Bot(token=conf.TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher(storage=MemoryStorage())
 
 
 db = db('lotEasy.db')
@@ -83,15 +83,19 @@ class Games:
             if coef > 0:
                 text += f"Ваш выигрыш составил *{format(float(sum)*coef, '.0f')}₽*!\n\nСыграйте еще!"
             await asyncio.sleep(sleep)
-            await bot.send_message(user_id, text, reply_markup=types.InlineKeyboardMarkup(1).add(
-                types.InlineKeyboardButton("\U0000267B Сыграть еще раз!", callback_data=f"create_bet_{game}_{format(sum, '06')}"),
-                await b().BT_Lk()), parse_mode="Markdown")
+            await bot.send_message(user_id, text, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+                [types.InlineKeyboardButton(text="\U0000267B Сыграть еще раз!", callback_data=f"create_bet_{game}_{format(sum, '06')}")],
+                [await b().BT_Lk()]
+            ]), parse_mode="Markdown")
             await db.warned_winner("offl", id_room)
         else:
             await bot.send_message(user_id, "*Игра уже была сыграна\n\nЕсли вы не получили уведомления о результате,"
                                             "а ваш баланс не изменился, подождите 5 минут. \nЕсли в течении данного времени "
-                                            "вы не получите уведомления, обратитесь в поддержку.*", reply_markup=types.InlineKeyboardMarkup(1).add(
-                await b().BT_Support(), await b().BT_Lk()), parse_mode="Markdown")
+                                            "вы не получите уведомления, обратитесь в поддержку.*",
+                                   reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+                                       [await b().BT_Support()],
+                                       [await b().BT_Lk()]
+                                   ]), parse_mode="Markdown")
 
     async def games_online(self, user_id, game, sum, msg_id):
         await db.set_withdraw_balance(user_id, sum)
@@ -171,6 +175,9 @@ class Games:
             await db.warned_winner(game, id_room)
         elif num_user != await db.win_num_check(game, id_room):
             line = f"\U0001F383 *Вы проиграли*\n*Выпало число {await db.win_num_check(game, id_room)}*\n\nПроверьте свою удачу еще раз!\n"
-        await bot.send_message(user_id, line, parse_mode="Markdown", reply_markup=types.InlineKeyboardMarkup(1).add(
-            types.InlineKeyboardButton('\U0000267B Попробовать еще раз',
-                                               callback_data=f"bet_{game}_{sum}"), await b().BT_Lk()))
+        await bot.send_message(user_id, line, parse_mode="Markdown",
+                               reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+                                   [types.InlineKeyboardButton(text='\U0000267B Попробовать еще раз',
+                                               callback_data=f"bet_{game}_{sum}")],
+                                   [await b().BT_Lk()]
+                               ]))

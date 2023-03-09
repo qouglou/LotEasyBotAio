@@ -1,14 +1,14 @@
 import asyncio
 
-from aiogram import Bot, types
-from aiogram.dispatcher import Dispatcher
+from aiogram import Bot, types, Dispatcher
 import conf
 import games
 import logging
 from db import BotDB as database
+from aiogram.fsm.storage.memory import MemoryStorage
 from buttons import ButtonsTg as b
 bot = Bot(token=conf.TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher(storage=MemoryStorage())
 db = database('lotEasy.db')
 logging.basicConfig(
     level=logging.WARNING,
@@ -25,15 +25,17 @@ class Checkers:
             logging.warning(f"Lines not done topups - {await db.get_lines_no_topup()}")
             M = 0
             while M < int(await db.get_lines_no_topup()):
-                int_pay, user_id, sum, accrued, done = await db.all_no_topup_checker()
-                if accrued and done is False:
+                int_pay, user_id, sum, accrued, done = await db.all_no_topup_checker(M)
+                if accrued is True and done is False:
                     await db.set_topup_balance(user_id, sum)
                     await db.set_topup_done(int_pay)
-                    logging.info(f"User {user_id} is automatically warned about his success topup №{int_pay}")
                     m_success_topup = (f"\U00002705 *Пополнение №{int_pay} успешно выполнено!*"
                                        f"\n\n*Ваш баланс:*\n{int(await db.get_user_balance(user_id))}₽")
-                    await bot.send_message(user_id, m_success_topup, "Markdown",
-                                           reply_markup=types.InlineKeyboardMarkup(1).add(await b().button_lk()))
+                    await bot.send_message(user_id, m_success_topup, parse_mode="Markdown",
+                                           reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+                                               [await b().BT_Lk()]
+                                           ]))
+                    logging.warning(f"User {user_id} is automatically warned about his success topup №{int_pay}")
                 M += 1
             await asyncio.sleep(30)
 
@@ -48,9 +50,11 @@ class Checkers:
                 N -= 1
             logging.info(f"User {user_id} unsuccessfully tried to find his topup №{id_pay}")
             await bot.edit_message_text("*Транзакция не найдена.\n\nПроверьте перевод еще раз, либо обратитесь к поддержке*",
-                                        user_id, msg_id, reply_markup=types.InlineKeyboardMarkup(1).add(
-                    await b().BT_Support(), types.InlineKeyboardButton('\U0000267B Проверить еще раз',
-                                                  callback_data=f"check_topup_{way_topup}_{format(id_pay, '7')}")), parse_mode="Markdown")
+                                        user_id, msg_id, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+                    [await b().BT_Support()],
+                    [types.InlineKeyboardButton(text='\U0000267B Проверить еще раз',
+                                                  callback_data=f"check_topup_{way_topup}_{format(id_pay, '7')}")]
+                ]), parse_mode="Markdown")
         elif (await db.get_topup_accured(id_pay) == 1) & (
                 await db.get_topup_done(id_pay) == 0):
             await db.set_topup_balance(user_id, await db.get_topup_sum(id_pay))
@@ -59,15 +63,16 @@ class Checkers:
             m_success_topup = (f"\U00002705 *Транзакция успешно выполнена!*"
                                f"\n\n*Ваш баланс:*\n{int(await db.get_user_balance(user_id))}₽")
             await bot.edit_message_text(m_success_topup, user_id, msg_id,
-                                        reply_markup=types.InlineKeyboardMarkup().add(
-                                            types.InlineKeyboardButton(await self.BT_lk(msg_id))),
-                                        parse_mode="Markdown")
+                                        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+                                            await b().BT_Lk(msg_id)
+                                        ]), parse_mode="Markdown")
         elif await db.get_topup_done(id_pay) == 1:
             await bot.delete_message(user_id, msg_id)
             logging.info(f"User {user_id} tried to get his topup №{id_pay} again")
             await bot.send_message(user_id, "*Данная транзакция уже выполнена*",
-                                   reply_markup=types.InlineKeyboardMarkup().add(
-                                       await self.BT_close()), parse_mode="Markdown")
+                                   reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+                                       [await b().BT_Close()]
+                                   ]), parse_mode="Markdown")
 
     async def data_checker(self, mfu):
         if (await db.get_user_name(mfu.id) != mfu.first_name) or (
@@ -77,7 +82,7 @@ class Checkers:
                                  mfu.id)
 
     async def bet_sum_checker(self, call, user_id=0, game="", sum=0):
-        keyboard = types.InlineKeyboardMarkup()
+        buttons = []
         if call != 0:
             user_id = call.from_user.id
             game = call.data[-11:-7]
@@ -101,18 +106,19 @@ class Checkers:
                     "slot": "Рулетка\U0001F3B0"
                 }[game]
                 check_txt = (f"*Выбранные параметры:*\n\nИгра - *{gline}*\nСтавка - *{sum}₽\U0001F4B0*")
-                keyboard.add(types.InlineKeyboardButton('\U00002705 Подтвердить',
-                                                    callback_data=f"create_bet_{game}_{format(sum, '06')}"))
+                buttons.append([types.InlineKeyboardButton(text='\U00002705 Подтвердить',
+                                                    callback_data=f"create_bet_{game}_{format(sum, '06')}")])
         elif sum > await db.get_user_balance(user_id):
             check_txt = (f"*Недостаточно средств:*\n\nБаланс - *{int(await db.get_user_balance(user_id))}₽*"
                          f"\nСтавка - *{sum}₽*")
-            keyboard.add(types.InlineKeyboardButton('\U0001F4B5 Пополнить', callback_data=f"topup_balance_{game}"))
-        keyboard.add(types.InlineKeyboardButton('\U0000267B Изменить', callback_data='change_bet'))
+            buttons.append([types.InlineKeyboardButton(text='\U0001F4B5 Пополнить', callback_data=f"topup_balance_{game}")])
+        buttons.append([types.InlineKeyboardButton(text='\U0000267B Изменить', callback_data='change_bet')])
         if call != 0:
-            await bot.edit_message_text(check_txt, user_id, call.message.message_id, reply_markup=keyboard,
-                                        parse_mode="Markdown")
+            await bot.edit_message_text(check_txt, user_id, call.message.message_id, reply_markup=types.InlineKeyboardMarkup(
+                inline_keyboard=[buttons]), parse_mode="Markdown")
         else:
-            await bot.send_message(user_id, check_txt, reply_markup=keyboard, parse_mode="Markdown")
+            await bot.send_message(user_id, check_txt, reply_markup=types.InlineKeyboardMarkup(
+                inline_keyboard=[buttons]), parse_mode="Markdown")
 
     async def rules_checker(self, user_id):
         if not await db.get_rules_accept(user_id):
@@ -120,14 +126,14 @@ class Checkers:
             await bot.send_message(user_id,
                                    "*Вы не можете пользоваться ботом, пока не приняли правила*",
                                    parse_mode="Markdown",
-                                   reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
-                                       types.KeyboardButton("\U0001F4D5 Правила"), types.KeyboardButton("\U00002705 Принять правила")
-                                   ))
+                                   reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
+                                       [types.KeyboardButton(text="\U0001F4D5 Правила")],
+                                       [types.KeyboardButton(text="\U00002705 Принять правила")]
+                                   ]))
         elif await db.get_ban(user_id):
             logging.warning(f"User {user_id} tried to use Bot with ban")
             await bot.send_message(user_id, "*Вы заблокированы \n\nДля возможного снятия блокировки вы можете связаться с поддержкой*", parse_mode="Markdown",
-                                   reply_markup=types.InlineKeyboardMarkup().add(
-                                       await b().BT_Support()))
+                                   reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[await b().BT_Support()]))
         return await db.get_rules_accept(user_id), await db.get_ban(user_id)
 
     async def winner_warned_checker(self):
@@ -159,8 +165,11 @@ class Checkers:
                         await db.warned_winner("offl", id_game)
                     key_again = types.InlineKeyboardButton(text='\U0000267B Попробовать еще раз',
                                                            callback_data='change_bet')
-                    await bot.send_message(user_id, line, "Markdown",
-                                           reply_markup=types.InlineKeyboardMarkup(1).add(key_again, await b().BT_Lk()))
+                    await bot.send_message(user_id, line, parse_mode="Markdown",
+                                           reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+                                               [key_again],
+                                               [await b.BT_Lk()]
+                                           ]))
                 M += 1
             await asyncio.sleep(30)
 

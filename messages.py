@@ -1,11 +1,11 @@
 import asyncio
 
-from aiogram import Bot, types
-from aiogram.dispatcher import Dispatcher
+from aiogram import Bot, types, Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
 import conf
 from buttons import ButtonsTg as b
 bot = Bot(token=conf.TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher(storage=MemoryStorage())
 
 
 class Messages:
@@ -18,11 +18,13 @@ class Messages:
         else:
             text_send = "Вы не можете пользоваться данным ботом, пока не приняли правила."
         await bot.send_message(user_id, text_send, parse_mode="Markdown",
-                               reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1).add(
-                                   "\U00002705 Принять правила", "\U0001F4D5 Правила"))
+                               reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
+                                   [types.KeyboardButton(text="\U00002705 Принять правила")],
+                                   [types.KeyboardButton(text="\U0001F4D5 Правила")]
+                               ]))
 
     async def no_access(self, adm_id, need_lvl, msg_id=False):
-        keyboard = types.InlineKeyboardMarkup().add(await b().BT_AdmLk())
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[await b().BT_AdmLk()])
         if msg_id:
             await bot.edit_message_text(f"*Недостаточно прав. \n\nНеобходимо иметь уровень {need_lvl} и выше.*",
                                           adm_id, msg_id, reply_markup=keyboard, parse_mode="Markdown")
@@ -31,11 +33,10 @@ class Messages:
                 reply_markup=keyboard, parse_mode="Markdown")
 
     async def bpmanag_no(self, user_id):
-        await bot.send_message(user_id, "Нет доступа", reply_markup=types.InlineKeyboardMarkup().add(
-            await b().BT_Close()), parse_mode="Markdown")
+        await bot.send_message(user_id, "Нет доступа", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[await b().BT_Close()]), parse_mode="Markdown")
 
     async def adm_no_valid(self, user_id, ex_adm, msg_id=0):
-        keyboard = types.InlineKeyboardMarkup().add(await b().BT_Support())
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[await b().BT_Support()])
         if ex_adm:
             await bot.edit_message_text("*Нет доступа.* \n\nЕсли это ошибка, вы можете связаться с главным админом",
                                         user_id, msg_id, reply_markup=keyboard, parse_mode="Markdown")
@@ -45,5 +46,4 @@ class Messages:
 
     async def not_new(self, user_id):
         await bot.send_message(user_id, f"\U0001F450 Рады видеть вас снова!",
-                               reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(
-                                   types.KeyboardButton("\U00002139 Меню")))
+                               reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[[types.KeyboardButton(text="\U00002139 Меню")]]))
