@@ -4,46 +4,54 @@ from aiogram import Bot, types, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 import conf
 from buttons import ButtonsTg as b
-bot = Bot(token=conf.TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 
 class Messages:
 
-    async def rules_accept(self, user_id, newbie):
+    async def rules_accept(self, message, newbie):
         if newbie:
             text_send = f"Данный бот поможет вам быстро потерять свои деньги. \U0001F4B8\n" \
-                        f"\nНажимая кнопку *Принять правила* вы принимаете правила его использования и подтверждаете " \
+                        f"\nНажимая кнопку <b>Принять правила</b> вы принимаете правила его использования и подтверждаете " \
                         f"свое совершеннолетие. \U0001F51E"
         else:
-            text_send = "Вы не можете пользоваться данным ботом, пока не приняли правила."
-        await bot.send_message(user_id, text_send, parse_mode="Markdown",
+            text_send = "<b>Вы не можете пользоваться данным ботом, пока не приняли правила</b>"
+        await message.answer(text=text_send,
                                reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
                                    [types.KeyboardButton(text="\U00002705 Принять правила")],
                                    [types.KeyboardButton(text="\U0001F4D5 Правила")]
                                ]))
 
-    async def no_access(self, adm_id, need_lvl, msg_id=False):
+    async def no_access(self, object, need_lvl, type):
         keyboard = types.InlineKeyboardMarkup(inline_keyboard=[await b().BT_AdmLk()])
-        if msg_id:
-            await bot.edit_message_text(f"*Недостаточно прав. \n\nНеобходимо иметь уровень {need_lvl} и выше.*",
-                                          adm_id, msg_id, reply_markup=keyboard, parse_mode="Markdown")
+        if type == "call":
+            await object.message.edit_text(text=f"<b>Недостаточно прав. \n\nНеобходимо иметь уровень {need_lvl} и выше.</b>",
+                                           reply_markup=keyboard)
         else:
-            await bot.send_message(adm_id, f"*Недостаточно прав.\n\nНеобходимо иметь уровень {need_lvl} и выше.*",
-                reply_markup=keyboard, parse_mode="Markdown")
+            await object.answer(text=f"<b>Недостаточно прав.\n\nНеобходимо иметь уровень {need_lvl} и выше.</b>",
+                reply_markup=keyboard)
 
-    async def bpmanag_no(self, user_id):
-        await bot.send_message(user_id, "Нет доступа", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[await b().BT_Close()]), parse_mode="Markdown")
-
-    async def adm_no_valid(self, user_id, ex_adm, msg_id=0):
-        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[await b().BT_Support()])
-        if ex_adm:
-            await bot.edit_message_text("*Нет доступа.* \n\nЕсли это ошибка, вы можете связаться с главным админом",
-                                        user_id, msg_id, reply_markup=keyboard, parse_mode="Markdown")
+    async def bpmanag_no(self, object, type):
+        if type == "call":
+            await object.message.edit_text(text="Нет доступа",
+                                   reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[await b().BT_Close()]))
         else:
-            await bot.send_message(user_id, "*Нет доступа.* \n\nЕсли это ошибка, вы можете связаться с главным админом",
-                                   reply_markup=keyboard, parse_mode="Markdown")
+            await object.answer(text="Нет доступа",
+                                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[await b().BT_Close()]]))
 
-    async def not_new(self, user_id):
-        await bot.send_message(user_id, f"\U0001F450 Рады видеть вас снова!",
+    async def adm_no_valid(self, object, type):
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[[await b().BT_Support()]])
+        if type == "call":
+            await object.message.edit_text(text="<b>Нет доступа.</b> \n\nЕсли это ошибка, вы можете связаться с главным админом",
+                                        reply_markup=keyboard)
+        else:
+            await object.answer(text="<b>Нет доступа.</b> \n\nЕсли это ошибка, вы можете связаться с главным админом",
+                                   reply_markup=keyboard)
+
+    async def not_new(self, message):
+        await message.answer(text=f"\U0001F450 Рады видеть вас снова!",
                                reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[[types.KeyboardButton(text="\U00002139 Меню")]]))
+
+    async def info_ban(self, message):
+        await message.answer(text="<b>Вы заблокированы \n\nДля возможного снятия блокировки вы можете связаться с поддержкой</b>",
+                               reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[await b().BT_Support()]]))

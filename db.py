@@ -91,54 +91,70 @@ class BotDB:
         self.cursor.execute(topup_universal, (user_id, way_topup, sum_topup, requisites))
         return self.conn.commit()
 
-    async def add_online_game(self, game, user_id, bet):
-        game_create_universal = "INSERT INTO " + game + "_room (user1, bet) VALUES (%s, %s)"
-        self.cursor.execute(game_create_universal, (user_id, bet,))
+    async def create_room_game(self, game, bet):
+        game_create_universal = "INSERT INTO games (game, bet) VALUES (%s, %s)"
+        self.cursor.execute(game_create_universal, (game, bet,))
         return self.conn.commit()
 
-    async def add_offline_game(self, game, user_id, bet):
-        game_create_universal = "INSERT INTO offl_room (user_id, game, bet) VALUES (%s, %s, %s)"
-        self.cursor.execute(game_create_universal, (user_id, game, bet,))
-        return self.conn.commit()
-
-    async def offline_game_get_id(self, game, user_id, bet):
-        get_free_game = "SELECT id FROM offl_room WHERE (user_id = %s AND game = %s AND bet = %s) order by id DESC LIMIT 1", (user_id, game, bet)
-        self.cursor.execute(*get_free_game)
-        return self.cursor.fetchone()[0]
-
-    async def offline_win_num_in(self, num_win, id_room):
-        self.cursor.execute("UPDATE offl_room SET num_win = %s WHERE id = %s", (num_win, id_room, ))
-        return self.conn.commit()
-
-    async def game_check_free(self, game, cur_num_user, user_id, bet):
-        get_free_game = "SELECT id FROM " + game + "_room WHERE (user1 IS NOT %s AND user1 != %s AND user" + str(cur_num_user) + " IS %s AND bet = %s AND done = False) order by id DESC LIMIT 1", (None, user_id, None, bet)
-        self.cursor.execute(*get_free_game)
+    async def check_free_room(self, game, bet, way="ASC"):
+        self.cursor.execute("SELECT id_room FROM games WHERE (game = %s AND bet = %s AND is_full = False AND is_end = False) ORDER BY id_room " + way + "", (game, bet,))
         return self.cursor.fetchone()
 
-    async def game_get_id(self, game, user_num, user_id, bet):
-        get_free_game = "SELECT id FROM " + game + "_room WHERE (user" + str(user_num) + "= %s AND bet = %s) order by id DESC LIMIT 1", (user_id, bet)
-        self.cursor.execute(*get_free_game)
+    async def check_game_end(self, id_room):
+        self.cursor.execute("SELECT is_end FROM games WHERE id_room = %s", (id_room,))
         return self.cursor.fetchone()[0]
 
-    async def game_add_user(self, game, cur_user, id_room, user_id, full):
-        self.cursor.execute("UPDATE " + game + "_room SET user" + str(cur_user) + " = %s, r_full = %s WHERE id = %s", (user_id, full, id_room,))
+    async def check_game_full(self, room_id):
+        self.cursor.execute("SELECT is_full FROM games WHERE id_room = %s", (room_id,))
+        return self.cursor.fetchone()[0]
+
+    async def check_user_second_game(self, room_id, user_id):
+        self.cursor.execute("SELECT COUNT (*) FROM game_records WHERE (id_room = %s AND user_id = %s)", (room_id, user_id,))
+        return self.cursor.fetchone()[0]
+
+    async def get_games_lines(self,  user_id):
+        self.cursor.execute("SELECT COUNT (*) FROM game_records WHERE user_id = %s", (user_id,))
+        return self.cursor.fetchone()[0]
+
+    async def add_user_to_game_room(self, room_id, user_id, user_num, game, bal_before):
+        add_user_to_game = "INSERT INTO game_records (id_room, user_id, user_num, game, bal_before) VALUES (%s, %s, %s, %s, %s)"
+        self.cursor.execute(add_user_to_game, (room_id, user_id, user_num, game, bal_before))
         return self.conn.commit()
 
-    async def game_check_full(self, game, id_room):
-        get_free_room = "SELECT r_full FROM " + game + "_room WHERE id = %s order by id DESC LIMIT 1", (id_room,)
-        self.cursor.execute(*get_free_room)
+    async def get_no_end_games_lines(self):
+        self.cursor.execute("SELECT COUNT(*) FROM games WHERE (is_full = %s, is_end = %s)", (True, False))
         return self.cursor.fetchone()[0]
 
-    async def win_num_check(self, game, id_room):
-        self.cursor.execute("SELECT num_win FROM " + game + "_room WHERE id = %s", (id_room,))
+    async def get_no_warned_player_lines(self):
+        self.cursor.execute("SELECT COUNT(*) FROM (SELECT game_records.warned, games.is_end FROM game_records INNER JOIN games ON game_records.id_room = games.id_room WHERE (game_records.warned = False AND games.is_end = True)) AS c")
         return self.cursor.fetchone()[0]
 
-    async def win_num_in(self, game, num_win, id_room):
-        self.cursor.execute("UPDATE " + game + "_room SET num_win = %s, done = True, time_done = %s WHERE id = %s", (num_win, str(datetime.now()), id_room,))
+    async def get_all_no_warned_checker(self):
+        self.cursor.execute("SELECT game_records.user_id, game_records.user_num, games.id_room, games.game, games.bet, games.win_num, game_records.win_sum, games.time_end FROM game_records INNER JOIN games ON game_records.id_room = games.id_room WHERE (game_records.warned = False AND games.is_end = True) ORDER BY games.id_room ASC FETCH NEXT 1 ROWS ONLY")
+        return [row for row in self.cursor.fetchone()]
+
+    async def set_room_full(self, room_id):
+        self.cursor.execute("UPDATE games SET is_full = True WHERE id_room = %s", (room_id,))
         return self.conn.commit()
 
-    async def warned_winner(self, game, id_room):
-        self.cursor.execute("UPDATE " + game + "_room SET warned = True WHERE id = %s", (id_room,))
+    async def win_num_check(self, room_id):
+        self.cursor.execute("SELECT win_num FROM games WHERE id_room = %s", (room_id,))
+        return self.cursor.fetchone()[0]
+
+    async def update_win_num_in(self, num_win, id_room):
+        self.cursor.execute("UPDATE games SET win_num = %s WHERE id_room = %s", (num_win, id_room, ))
+        return self.conn.commit()
+
+    async def update_win_sum_in(self, id_room, user_id, win_sum):
+        self.cursor.execute("UPDATE game_records SET win_sum = %s WHERE (id_room = %s AND user_id = %s)", (win_sum, id_room, user_id))
+        return self.conn.commit()
+
+    async def warned_winner(self, id_room, user_id):
+        self.cursor.execute("UPDATE game_records SET warned = True WHERE (user_id = %s AND id_room = %s)", (user_id, id_room,))
+        return self.conn.commit()
+
+    async def set_game_end(self, id_room):
+        self.cursor.execute("UPDATE games SET is_end = True, time_end = %s WHERE id_room = %s", (str(datetime.now()), id_room))
         return self.conn.commit()
 
     async def with_create(self, user_id, sum_with, way_with, requisites):
@@ -148,6 +164,10 @@ class BotDB:
 
     async def get_topup_lines(self, user_id):
         self.cursor.execute("SELECT COUNT (*) FROM payments WHERE user_id = %s", (user_id,))
+        return self.cursor.fetchone()[0]
+
+    async def get_user_num(self, id_room):
+        self.cursor.execute("SELECT COUNT (*) FROM game_records WHERE id_room = %s", (id_room,))
         return self.cursor.fetchone()[0]
 
     async def get_topups_user(self, user_id):
@@ -178,41 +198,23 @@ class BotDB:
                             (msg_id, user_id, msg_data))
         return self.conn.commit()
 
-    async def get_story(self, user_id, num_from):
+    async def get_story_oper(self, user_id, num_from):
         self.cursor.execute("SELECT int_pay, way_topup, sum, done, oper, time_create FROM payments WHERE user_id = %s UNION ALL "
                             "SELECT int_wit, way_with, sum, done, oper, time_create FROM withdraws WHERE user_id = %s ORDER BY time_create DESC OFFSET "+ str(num_from-1) + "ROWS FETCH NEXT 1 ROWS ONLY", (user_id, user_id,))
         return [row for row in self.cursor.fetchone()]
 
+    async def get_story_game(self, user_id, num_from):
+        self.cursor.execute("SELECT game_records.user_num, game_records.warned, game_records.win_sum, game_records.bal_before,"
+                            "games.id_room, games.win_num, games.is_full, games.is_end, games.time_create, games.time_end, games.bet, games.game "
+                            "FROM game_records INNER JOIN games ON game_records.id_room = games.id_room WHERE user_id = %s ORDER BY games.time_create DESC OFFSET "+ str(num_from-1) + "ROWS FETCH NEXT 1 ROWS ONLY", (user_id,))
+        return [row for row in self.cursor.fetchone()]
+
     async def get_lines_no_topup(self):
-        self.cursor.execute("SELECT COUNT (*) FROM payments WHERE done = False")
+        self.cursor.execute("SELECT COUNT (*) FROM payments WHERE done = false")
         return self.cursor.fetchone()[0]
 
-    async def get_lines_no_warned(self):
-        self.cursor.execute("SELECT COUNT(*) FROM ("
-                            "SELECT id FROM offl_room WHERE (num_win != 0 AND warned = False) UNION ALL "
-                            "SELECT id FROM duel_room WHERE (num_win != 0 AND warned = False) UNION ALL "
-                            "SELECT id FROM russ_room WHERE (num_win != 0 AND warned = False) UNION ALL "
-                            "SELECT id FROM king_room WHERE (num_win != 0 AND warned = False)) AS c")
-        return self.cursor.fetchone()[0]
-
-    async def get_games_lines(self):
-        self.cursor.execute("SELECT COUNT(*) FROM (SELECT id FROM duel_room UNION ALL SELECT id FROM russ_room UNION ALL SELECT id FROM king_room) AS a")
-        return self.cursor.fetchone()[0]
-
-    async def all_no_warned_checker(self):
-        self.cursor.execute(
-            "SELECT id, num_win, warned, game FROM offl_room WHERE (num_win != 0 AND warned = False) UNION ALL "
-            "SELECT id, num_win, warned, game FROM duel_room WHERE (num_win != 0 AND warned = False) UNION ALL "
-            "SELECT id, num_win, warned, game FROM russ_room WHERE (num_win != 0 AND warned = False) UNION ALL "
-            "SELECT id, num_win, warned, game FROM king_room WHERE (num_win != 0 AND warned = False) ORDER BY id ASC LIMIT 1 OFFSET 0")
-        return [row for row in self.cursor.fetchone()]
-
-    async def get_winner(self, id_room, game, num_win):
-        self.cursor.execute("SELECT user" + str(num_win) + ", bet FROM " + game + "_room WHERE id = %s", (id_room,))
-        return [row for row in self.cursor.fetchone()]
-
-    async def all_no_topup_checker(self, line):
-        self.cursor.execute("SELECT int_pay, user_id, sum, accrued, done FROM payments WHERE done = False ORDER BY int_pay ASC OFFSET "+ str(line) + "ROWS FETCH NEXT 1 ROWS ONLY")
+    async def all_no_topup_checker(self):
+        self.cursor.execute("SELECT int_pay, user_id, sum, accrued, done FROM payments WHERE done = False ORDER BY int_pay ASC FETCH NEXT 1 ROWS ONLY")
         return [row for row in self.cursor.fetchone()]
 
     async def get_withd_way(self, withd_id):
@@ -227,9 +229,21 @@ class BotDB:
         self.cursor.execute("SELECT valid FROM admins WHERE adm = %s", (user_id,))
         return self.cursor.fetchone()[0]
 
+    async def set_adm_valid(self, user_id, arg):
+        self.cursor.execute("UPDATE admins SET valid = %s WHERE adm = %s", (arg, user_id,))
+        return self.conn.commit()
+
+    async def set_adm_lvl(self, user_id, new_lvl):
+        self.cursor.execute("UPDATE admins SET access_lvl = %s WHERE adm = %s", (new_lvl, user_id,))
+        return self.conn.commit()
+
     async def adm_lvl_check(self, user_id):
         self.cursor.execute("SELECT access_lvl FROM admins WHERE adm = %s", (user_id,))
         return self.cursor.fetchone()[0]
+
+    async def adm_add_admin(self, user_id, inviter):
+        self.cursor.execute("INSERT INTO admins (adm, inviter, valid) VALUES (%s, %s, %s)", (user_id, inviter, True))
+        return self.conn.commit()
 
     async def adm_info_topup(self, id_pay):
         self.cursor.execute("SELECT * FROM payments WHERE int_pay = %s", (id_pay,))
@@ -258,6 +272,18 @@ class BotDB:
 
     async def adm_user_info(self, user_id, arg="user_id ="):
         self.cursor.execute(f"SELECT * FROM users WHERE {arg} %s", (user_id,))
+        return [row for row in self.cursor.fetchone()]
+
+    async def get_admin_lines(self):
+        self.cursor.execute("SELECT COUNT(*) FROM admins")
+        return self.cursor.fetchone()[0]
+
+    async def adm_adm_info(self, user_id):
+        self.cursor.execute(f"SELECT * FROM admins WHERE adm = %s", (user_id,))
+        return [row for row in self.cursor.fetchone()]
+
+    async def adm_list_info(self, M):
+        self.cursor.execute(f"SELECT id, adm, valid, access_lvl FROM admins ORDER BY id DESC OFFSET " + str(M-1) + "ROWS FETCH NEXT 1 ROWS ONLY")
         return [row for row in self.cursor.fetchone()]
 
     async def adm_ban_user(self, user_id, arg):

@@ -1,17 +1,23 @@
 #telegram bot token
 TOKEN = "5282780484:AAFwq6-XgA-G57eIimoI_PZRD7EKyIjxG74"
 
-#bpm password
-password_bpm = "123123"
-
-#access lvls
+#admin access lvls
 junior_lvl = 0
 middle_lvl = 1
 master_lvl = 2
 superuser_lvl = 3
 
 #checkers start
-ch_start = True
+ch_start = False
+
+#checkers timers
+ch_topup_timer = 30
+ch_winner_timer = 30
+
+#games max users
+max_users_king = 100
+max_users_russ = 6
+max_users_duel = 2
 
 #story topup
 base_num = 5
@@ -25,19 +31,19 @@ max_adm = 100000
 min_adm = 1
 
 #games_coefficients
-#bowling Mathematical expectation - 0,95
+#bowling Math expectation - 0,95
 bowl_strike = 2
 bowl_hit_5 = 1.5
 bowl_hit_4 = 1.25
 bowl_hit_3 = 1
 
-#dice Mathematical expectation - 0,95
+#dice Math expectation - 0,95
 dice_6 = 2
 dice_5 = 1.5
 dice_4 = 1.25
 dice_3 = 1
 
-#slots Mathematical expectation - 0,94
+#slots Math expectation - 0,94
 #1/64
 slot_jackpot = 10
 #3/64
