@@ -1,32 +1,49 @@
-#telegram bot token
-TOKEN = "5282780484:AAFwq6-XgA-G57eIimoI_PZRD7EKyIjxG74"
-
 #admin access lvls
 junior_lvl = 0
 middle_lvl = 1
 master_lvl = 2
 superuser_lvl = 3
 
-#checkers start
-ch_start = False
 
-#checkers timers
+#checkers
+#start
+ch_start = True
+
+#timers
 ch_topup_timer = 30
 ch_winner_timer = 30
 
-#games max users
+
+#games
+
+#max users
 max_users_king = 100
 max_users_russ = 6
 max_users_duel = 2
 
-#story topup
+#artifical delay
+
+#offline games
+#bowl, cube
+bowl_cube_delay = 4
+slot_delay = 2
+#online_games
+online_games_delay = 3.5
+
+
+#story topup/games lines
 base_num = 5
 
 #max and min sums
+#topup and withdraws
 max_tw = 10000
 min_tw = 50
+
+#bets
 max_bet = 1000
 min_bet = 10
+
+#admin sums
 max_adm = 100000
 min_adm = 1
 

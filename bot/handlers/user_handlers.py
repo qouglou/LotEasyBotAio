@@ -1,25 +1,22 @@
-import asyncio
 import random
 
-from aiogram import types, Router, Bot, F
+from aiogram import types, Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.filters.command import Command
-import conf
-import logging
+from bot.configs import conf
 
-from filters.is_forwarded import ForwardedFilter
-from callback_factory import BalanceManageCallback, AdminManageCallback
-from middlewares.ban_rules_check import BanRulesMsgMiddleware
+from bot.filters.is_forwarded import ForwardedFilter
+from bot.callback_factory import BalanceManageCallback, AdminManageCallback
+from bot.middlewares.ban_rules_check import BanRulesMsgMiddleware
+from bot.db_conn_create import db
+from bot.configs.logs_config import logs
 
-from db import BotDB
+from bot.fsm import FSM
+from bot.templates.texts import TextsTg as t
+from bot.templates.buttons import ButtonsTg as b
+from bot.checkers import Checkers as ch
+from bot.templates.messages import Messages as msg
 
-from fsm import FSM
-from texts import TextsTg as t
-from buttons import ButtonsTg as b
-from checkers import Checkers as ch
-from messages import Messages as msg
-
-db = BotDB('lotEasy.db')
 router = Router()
 router.message.middleware(BanRulesMsgMiddleware())
 
@@ -65,7 +62,7 @@ async def cmd_start(message: types.Message):
     if not await db.get_user_exists(message.from_user.id):
         await db.add_user(message.from_user.id, message.from_user.first_name,
                           message.from_user.last_name, message.from_user.username)
-        logging.info(f"User {message.from_user.id} start to use Bot with message {message}")
+        logs.info(f"User {message.from_user.id} start to use Bot with message {message}")
         await msg().rules_accept(message, True)
     await ch().data_checker(message.from_user)
     if await db.get_rules_accept(message.from_user.id) == 0:
@@ -148,7 +145,7 @@ async def story_oper(call):
             else:
                 adm_line = f"<b>Игры пользователя - <code>{user_id}</code></b>\n\n"
         else:
-            logging.warning(
+            logs.warning(
                 f"Not valid admin {call.from_user.id} tried to get access to admin panel with call - {call}")
             return await msg().adm_no_valid(call, "call")
     else:
@@ -383,7 +380,7 @@ async def deleter(call):
 # Проверка пополнения. Запрос типа "(re)check_topup_способ(04)_айди платежа(07)"
 @router.callback_query(BalanceManageCallback.filter(F.action == "check_topup"))
 async def check_topup(call: types.CallbackQuery, callback_data: BalanceManageCallback):
-    await ch().topup_checker_user(call.from_user.id, callback_data.id_oper, callback_data.id_msg)
+    await ch().topup_checker_user(call.message, callback_data.id_oper)
 
 
 # Создание заявки на вывод после подтверждения правильности данных. Запрос типа "confirm_with_способ(04)_сумма(06)_реквизиты(17)"
@@ -411,7 +408,7 @@ async def changer_bet(call: types.CallbackQuery):
 @router.callback_query(BalanceManageCallback.filter(F.action == "check_bet"))
 @router.callback_query(BalanceManageCallback.filter(F.action == "create_bet"))
 async def creating_room(call: types.CallbackQuery, callback_data: BalanceManageCallback):
-    await ch().bet_sum_checker(call.from_user.id, callback_data.game, callback_data.sum, callback_data.action, call.message.message_id)
+    await ch().bet_sum_checker(call.message, callback_data.game, callback_data.sum, callback_data.action, call.message.message_id)
 
 
 
@@ -453,7 +450,7 @@ async def user_get_requisites(message: types.Message, state: FSMContext):
                                                                  callback_data=BalanceManageCallback(operation="withd", from_where="main", action="choose_way").pack())]
                                  ]))
     except:
-        logging.info(f"User {message.from_user.id} tried to enter requisites {message.text}")
+        logs.info(f"User {message.from_user.id} tried to enter requisites {message.text}")
         await message.answer("<b>Неверный формат реквизитов.</b>"
                              "\n\nВыберите одно из действий",
                              reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
@@ -556,7 +553,7 @@ async def user_other_sum_enter(message, state: FSMContext):
                                      f"\nСпособ {lineoper} - <b>{lineway}</b>",
                                      reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
             elif (await state.get_data())['type'] == "bet":
-                await ch().bet_sum_checker(message.from_user.id, game, int(message.text), "check_bet")
+                await ch().bet_sum_checker(message, game, int(message.text), "check_bet")
             elif (await state.get_data())['type'] == "admin":
                 buttons.append([types.InlineKeyboardButton(text="\U00002705 Подтвердить",
                                                            callback_data=AdminManageCallback(action="change_balance", user_id=user_id, key=way, sum=message.text).pack())])
@@ -567,7 +564,7 @@ async def user_other_sum_enter(message, state: FSMContext):
                                      f"{text_confirm}{message.text}₽</b>",
                                      reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
     except:
-        logging.info(
+        logs.info(
             f"User {message.from_user.id} tried to enter sum of {(await state.get_data())['type']} - {message.text}")
         buttons.append([b_enter_again])
         buttons.append([await b().BT_Lk()])
@@ -637,3 +634,4 @@ async def que_answ(message):
 async def online_game_bet(message):
     text, keyboard = await b().KBT_GameBet(message.text)
     await message.answer(text, reply_markup=keyboard)
+

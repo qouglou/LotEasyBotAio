@@ -2,9 +2,8 @@ from typing import Callable, Dict, Any, Awaitable
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
-from messages import Messages as msg
-from db import BotDB
-db = BotDB('lotEasy.db')
+from bot.templates.messages import Messages as msg
+from bot.db_conn_create import db
 
 
 def _is_user_banned(user_id):
@@ -33,6 +32,7 @@ class BanRulesCallbackMiddleware(BaseMiddleware):
 
 
 class BanRulesMsgMiddleware(BaseMiddleware):
+
     async def __call__(
         self,
         handler: Callable[[Message, Dict[str, Any]], Awaitable[Any]],
@@ -50,6 +50,7 @@ class BanRulesMsgMiddleware(BaseMiddleware):
 
 
 class BanMsgMiddleware(BaseMiddleware):
+
     async def __call__(
         self,
         handler: Callable[[Message, Dict[str, Any]], Awaitable[Any]],

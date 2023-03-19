@@ -1,17 +1,11 @@
 import asyncio
 
-from aiogram import Bot, types, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
-import conf
+from aiogram import types
+from bot.configs import conf
 import random
-from db import BotDB as db
-from buttons import ButtonsTg as b
-from callback_factory import BalanceManageCallback
-
-bot = Bot(token=conf.TOKEN, parse_mode="HTML")
-dp = Dispatcher(storage=MemoryStorage())
-
-db = db('lotEasy.db')
+from bot.templates.buttons import ButtonsTg as b
+from bot.callback_factory import BalanceManageCallback
+from bot.db_conn_create import db
 
 
 class Games:
@@ -64,8 +58,8 @@ class Games:
                 txt = "<b>Выбить все разное - тоже надо постараться!</b>\n\n"
         return coef, txt
 
-    async def games_offline(self, user_id, game, sum, msg_id):
-        await bot.delete_message(user_id, msg_id)
+    async def games_offline(self, message: types.Message, game, sum):
+        await message.delete()
         try:
             room_id = (await db.check_free_room(game, sum))[0]
         except:
@@ -73,35 +67,35 @@ class Games:
             while room_id is None:
                 await db.create_room_game(game, sum)
                 room_id = (await db.check_free_room(game, sum))[0]
-        await db.add_user_to_game_room(room_id, user_id, 0, game, await db.get_user_balance(user_id))
+        await db.add_user_to_game_room(room_id, message.chat.id, 0, game, await db.get_user_balance(message.chat.id))
         await db.set_room_full(room_id)
-        await db.set_withdraw_balance(user_id, sum)
-        sleep = 4
+        await db.set_withdraw_balance(message.chat.id, sum)
+        sleep = conf.bowl_cube_delay
         if game == "bowl":
-            msg = await bot.send_dice(user_id, emoji="\U0001F3B3")
+            msg = await message.answer_dice(emoji="\U0001F3B3")
         elif game == "cube":
-            msg = await bot.send_dice(user_id, emoji="\U0001F3B2")
+            msg = await message.answer_dice(emoji="\U0001F3B2")
         elif game == "slot":
-            sleep = 2
-            msg = await bot.send_dice(user_id, emoji="\U0001F3B0")
+            sleep = conf.slot_delay
+            msg = await message.answer_dice(emoji="\U0001F3B0")
         coef, text = await self.get_offline_values(game, msg.dice.value)
         if await db.win_num_check(room_id) == 0:
-            await db.set_topup_balance(user_id, float(sum) * coef)
+            await db.set_topup_balance(message.chat.id, float(sum) * coef)
             await db.update_win_num_in(int(msg.dice.value), room_id)
-            await db.update_win_sum_in(room_id, user_id, float(sum) * coef)
+            await db.update_win_sum_in(room_id, message.chat.id, float(sum) * coef)
             await db.set_game_end(room_id)
             if coef > 0:
                 text += f"Ваш выигрыш составил <b>{format(float(sum) * coef, '.0f')}₽</b>!\n\nСыграйте еще!"
             await asyncio.sleep(sleep)
-            await bot.send_message(user_id, text, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            await message.answer(text=text, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
                 [types.InlineKeyboardButton(text="\U0000267B Сыграть еще раз!",
                                             callback_data=BalanceManageCallback(action="create_bet", game=game,
                                                                                 sum=sum).pack())],
                 [await b().BT_Lk()]
             ]))
-            await db.warned_winner(room_id, user_id)
+            await db.warned_winner(room_id, message.chat.id)
         else:
-            await bot.send_message(user_id, "<b>Игра уже была сыграна\n\nЕсли вы не получили уведомления о результате,"
+            await message.answer(text="<b>Игра уже была сыграна\n\nЕсли вы не получили уведомления о результате,"
                                             "а ваш баланс не изменился, подождите 5 минут. \nЕсли в течении данного времени "
                                             "вы не получите уведомления, обратитесь в поддержку.</b>",
                                    reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
@@ -109,7 +103,16 @@ class Games:
                                        [await b().BT_Lk()]
                                    ]))
 
-    async def games_online(self, user_id, game, sum, msg_id):
+    async def games_online(self, message: types.Message, game, sum):
+        try:
+            room_id = (await db.check_free_room(game, sum))[0]
+            if await db.check_user_second_game(room_id, message.chat.id) == 1:
+                raise
+        except:
+            room_id = None
+            while room_id is None:
+                await db.create_room_game(game, sum)
+                room_id = (await db.check_free_room(game, sum, "DESC"))[0]
         if game == "king":
             gline = "\U0001F451 Королевская битва"
             max_num_user = conf.max_users_king
@@ -119,18 +122,9 @@ class Games:
         elif game == "duel":
             gline = "\U0001F93A Дуэль"
             max_num_user = conf.max_users_duel
-        try:
-            room_id = (await db.check_free_room(game, sum))[0]
-            if await db.check_user_second_game(room_id, user_id) == 1:
-                raise
-        except:
-            room_id = None
-            while room_id is None:
-                await db.create_room_game(game, sum)
-                room_id = (await db.check_free_room(game, sum, "DESC"))[0]
         user_num = await db.get_user_num(room_id) + 1
-        await db.add_user_to_game_room(room_id, user_id, user_num, game, await db.get_user_balance(user_id))
-        await db.set_withdraw_balance(user_id, sum)
+        await db.add_user_to_game_room(room_id, message.chat.id, user_num, game, await db.get_user_balance(message.chat.id))
+        await db.set_withdraw_balance(message.chat.id, sum)
         if user_num == max_num_user:
             await db.set_room_full(room_id)
             await db.update_win_num_in(random.randint(1, max_num_user), room_id)
@@ -142,14 +136,14 @@ class Games:
                     f"\nКомната - <b>{room_id}</b>\nВаш номер - <b>№{user_num}</b>"
                     f"\n\n<b>{gline}</b>\n\U0001F4B0<b>{sum}₽</b>{num_enemys}")
         edited_t = create_t
-        await bot.edit_message_text(create_t, user_id, msg_id)
+        await message.edit_text(text=create_t)
         N = 6
         while N != 0:
             await asyncio.sleep(1)
             if await db.check_game_full(room_id):
                 break
             edited_t += "\U000026AA"
-            await bot.edit_message_text(edited_t, user_id, msg_id)
+            await message.edit_text(text=edited_t)
             N -= 1
             if N == 1:
                 N = 6
@@ -158,11 +152,11 @@ class Games:
             enemy_found = "<b>\U00002705 Противник найден!</b>\n\nНачинаем игру..."
         else:
             enemy_found = "<b>\U00002705 Противники найдены!</b>\n\nНачинаем игру..."
-        await bot.edit_message_text(enemy_found, user_id, msg_id)
+        await message.edit_text(text=enemy_found)
         await asyncio.sleep(3)
-        msg = await bot.edit_message_text(f"{gline[:1]}Игра началась\nВаше число - <b>{user_num}</b>", user_id, msg_id)
+        msg = await message.edit_text(text=f"{gline[:1]}Игра началась\nВаше число - <b>{user_num}</b>")
         await asyncio.sleep(2)
-        await bot.delete_message(user_id, msg.message_id)
+        await msg.delete()
         sticker = {
             1: "CAACAgEAAxkBAAJKXmP1-D61tx35vn4SJgdiRRxGBxn3AAI8CAAC43gEAAHaKiq0NcyVRi4E",
             2: "CAACAgEAAxkBAAJKYGP1-RTUHflK7hudhgMyGsTGa3jgAAI9CAAC43gEAAFY6MYzUmo1jC4E",
@@ -171,22 +165,22 @@ class Games:
             5: "CAACAgEAAxkBAAJKoGP1-71SLKKzmLk_RXHrstmowCzdAAJACAAC43gEAAG79fTbfrFmui4E",
             6: "CAACAgEAAxkBAAJKomP1-8Rz_wl2zODmzcgKUCeFGXtxAAJBCAAC43gEAAGJk5R3VlyCEy4E"
         }[await db.win_num_check(room_id)]
-        msg = await bot.send_sticker(user_id, sticker)
-        await asyncio.sleep(3.5)
-        await bot.delete_message(user_id, msg.message_id)
+        msg = await message.answer_sticker(sticker=sticker)
+        await asyncio.sleep(conf.online_games_delay)
+        await msg.delete()
         if user_num == await db.win_num_check(room_id):
             line = f"\U0001F389 <b>Вы победили!</b>\n<b>Выпало число {await db.win_num_check(room_id)}</b>\n\nВаш выигрыш - <b>{int(sum) * 2}₽</b>\nПроверьте свою удачу еще раз!\n"
-            await db.set_topup_balance(user_id, int(sum) * 2)
-            await db.update_win_sum_in(room_id, user_id, int(sum) * 2)
+            await db.set_topup_balance(message.chat.id, int(sum) * 2)
+            await db.update_win_sum_in(room_id, message.chat.id, int(sum) * 2)
         elif user_num != await db.win_num_check(room_id):
             line = f"\U0001F383 <b>Вы проиграли</b>\n<b>Выпало число {await db.win_num_check(room_id)}</b>\n\nПроверьте свою удачу еще раз!\n"
-            await db.update_win_sum_in(room_id, user_id, 0)
+            await db.update_win_sum_in(room_id, message.chat.id, 0)
         if not await db.check_game_end(room_id):
             await db.set_game_end(room_id)
-        await bot.send_message(user_id, line,
+        await message.answer(text=line,
                                reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
                                    [types.InlineKeyboardButton(text='\U0000267B Попробовать еще раз',
                                                                callback_data=BalanceManageCallback(action="create_bet", game=game, sum=sum).pack())],
                                    [await b().BT_Lk()]
                                ]))
-        await db.warned_winner(room_id, user_id)
+        await db.warned_winner(room_id, message.chat.id)

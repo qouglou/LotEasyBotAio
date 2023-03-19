@@ -1,20 +1,19 @@
 from aiogram import types, Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.filters.command import Command
-import conf
-import logging
+from bot.configs import conf
+from bot.configs.logs_config import logs
 
-from callback_factory import AdminManageCallback
-from middlewares.admin_valid_check import AdminValidCallMiddleware, AdminValidMsgMiddleware
-from middlewares.ban_rules_check import BanRulesMsgMiddleware
+from bot.callback_factory import AdminManageCallback
+from bot.middlewares.admin_valid_check import AdminValidCallMiddleware, AdminValidMsgMiddleware
+from bot.middlewares.ban_rules_check import BanRulesMsgMiddleware
 
-from db import BotDB
+from bot.db_conn_create import db
 
-from fsm import FSM
-from buttons import ButtonsTg as b
-from messages import Messages as msg
+from bot.fsm import FSM
+from bot.templates.buttons import ButtonsTg as b
+from bot.templates.messages import Messages as msg
 
-db = BotDB('lotEasy.db')
 router = Router()
 router.callback_query.middleware(AdminValidCallMiddleware())
 router.message.middleware(AdminValidMsgMiddleware())
@@ -46,7 +45,7 @@ async def change_trans_type(call: types.CallbackQuery, callback_data: AdminManag
                 await db.adm_topup_true(callback_data.id_oper)
             elif callback_data.operation == "withd":
                 await db.adm_withd_true(callback_data.id_oper)
-            logging.warning(f"Admin {call.from_user.id} confirm transaction of {callback_data.operation} №{callback_data.id_oper}")
+            logs.warning(f"Admin {call.from_user.id} confirm transaction of {callback_data.operation} №{callback_data.id_oper}")
             await call.message.edit_text(text=f"<b>Транзакция №{callback_data.id_oper} успешно подтверждена!</b>",
                                         reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
                                             [types.InlineKeyboardButton(text='\U0000267B Другая транзакция',
@@ -65,7 +64,7 @@ async def change_trans_type(call: types.CallbackQuery, callback_data: AdminManag
                                             [await b().BT_AdmLk()]
                                         ]))
     else:
-        logging.warning(f"Admin {call.from_user.id} with access {await db.adm_lvl_check(call.from_user.id)} tried to get "
+        logs.warning(f"Admin {call.from_user.id} with access {await db.adm_lvl_check(call.from_user.id)} tried to get "
                         f"access to admin functionality with call - {call}")
         await msg().no_access(call, "1 (Middle)", "call")
     await call.answer()
@@ -350,7 +349,7 @@ async def remove_admin_check(call: types.CallbackQuery, callback_data: AdminMana
 @router.callback_query(AdminManageCallback.filter(F.action == "upgrade_admin"))
 @router.callback_query(AdminManageCallback.filter(F.action == "demote_admin"))
 async def remove_admin_check(call: types.CallbackQuery, callback_data: AdminManageCallback):
-    if await db.adm_lvl_check(callback_data) == conf.superuser_lvl:
+    if await db.adm_lvl_check(call.from_user.id) == conf.superuser_lvl:
         if callback_data.action == "remove_admin":
             if await db.adm_valid_check(callback_data.user_id):
                 await db.set_adm_valid(callback_data.user_id, False)
@@ -382,6 +381,7 @@ async def remove_admin_check(call: types.CallbackQuery, callback_data: AdminMana
     else:
         await msg().no_access(call, "3 (Superuser)", "call")
     await call.answer()
+
 
 async def adm_adm_info(object, user_id, type):
     if user_id.isdigit() and await db.adm_check(user_id):
@@ -446,7 +446,7 @@ async def adm_user_info(object, user_id, type):
             key = "user_id ="
         else:
             key = "username ILIKE"
-        id_sys, user_id, join_date, balance, name, lastname, username, rules_acc, ban = [x for x in
+        id_sys, user_id, join_date, balance, name, lastname, username, rules_acc, ban, bot_blocked = [x for x in
                                                                                          await db.adm_user_info(
                                                                                              user_id, key)]
         join_date = str(join_date)
@@ -458,6 +458,10 @@ async def adm_user_info(object, user_id, type):
             lastname_info = f"\nВторое имя - {lastname}\n"
         else:
             lastname_info = "\n"
+        if bot_blocked:
+            bot_blocked_info = "\U00002705"
+        else:
+            bot_blocked_info = "\U0000274C"
         if rules_acc:
             rules_info = "\U00002705"
         else:
@@ -483,16 +487,20 @@ async def adm_user_info(object, user_id, type):
                                                    callback_data=AdminManageCallback(action="choose_user").pack())])
         buttons.append([await b().BT_AdmLk()])
         if type == "message":
-            await object.answer(text=f"<b>Данные о пользователе:\n\nID - </b><code>{user_id}</code>\n"
-                                           f"<b>Имя -</b> {name}{lastname_info}<b>Баланс -</b> {format(balance, '.0f')}₽\n"
-                                           f"<b>Дата регистрации -</b> {join_date[:10]}\n<b>Правила - {rules_info}\n"
-                                           f"Наличие бана - {ban_info}</b>",
+            await object.answer(text=f"<b>Данные о пользователе:\n\n"
+                                     f"ID - </b><code>{user_id}</code>\n"
+                                     f"<b>Имя -</b> {name}{lastname_info}<b>Баланс -</b> {format(balance, '.0f')}₽\n"
+                                     f"<b>Дата регистрации -</b> {join_date[:10]}\n<b>Правила - {rules_info}\n"
+                                     f"Заблокировал бота - {bot_blocked_info}\n"
+                                     f"Наличие бана - {ban_info}</b>",
                                    reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
         else:
-            await object.message.edit_text(text=f"<b>Данные о пользователе:\n\nID - </b><code>{user_id}</code>\n"
-                                        f"<b>Имя -</b> {name}{lastname_info}<b>Баланс -</b> {format(balance, '.0f')}₽\n"
-                                        f"<b>Дата регистрации -</b> {join_date[:10]}\n<b>Правила - {rules_info}\n"
-                                        f"Наличие бана - {ban_info}</b>",
+            await object.message.edit_text(text=f"<b>Данные о пользователе:\n\n"
+                                                f"ID - </b><code>{user_id}</code>\n"
+                                                f"<b>Имя -</b> {name}{lastname_info}<b>Баланс -</b> {format(balance, '.0f')}₽\n"
+                                                f"<b>Дата регистрации -</b> {join_date[:10]}\n<b>Правила - {rules_info}\n"
+                                                f"Заблокировал бота - {bot_blocked_info}\n"
+                                                f"Наличие бана - {ban_info}</b>",
                                         reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
     else:
         await object.answer(text="<b>Данный пользователь не найден</b>",
@@ -545,7 +553,7 @@ async def change_withd_way(call: types.CallbackQuery, callback_data: AdminManage
                                         [await b().BT_AdmLk()]
                                     ]))
     else:
-        logging.warning(
+        logs.warning(
             f"Admin {call.from_user.id} with access {await db.adm_lvl_check(call.from_user.id)} tried to get "
             f"access to admin functionality with call - {call}")
         await msg().no_access(call, "2 (Master)", "call")
@@ -561,7 +569,7 @@ async def get_new_req(call: types.CallbackQuery, callback_data: AdminManageCallb
                                 old_way=await db.get_withd_way(callback_data.id_oper), with_id=callback_data.id_oper)
         await state.set_state(FSM.adm_new_requis)
     else:
-        logging.warning(
+        logs.warning(
             f"Admin {call.from_user.id} with access {await db.adm_lvl_check(call.from_user.id)} tried to get "
             f"access to admin functionality with call - {call}")
         await msg().no_access(call, "2 (Master)", "call")
@@ -606,7 +614,7 @@ async def get_id_trans(message: types.Message, state: FSMContext):
             await message.answer("<b>Неверные реквизиты\n\nВыберите одно из действий:</b>",
                                  reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
     else:
-        logging.warning(
+        logs.warning(
             f"Admin {message.from_user.id} with access {await db.adm_lvl_check(adm_id)} tried to get "
             f"access to admin functionality with message - {message}")
         await msg().no_access(message, "2 (Master)", "message")
@@ -618,7 +626,7 @@ async def get_id_trans(message: types.Message, state: FSMContext):
 @router.callback_query(AdminManageCallback.filter(F.action == "new_requisites"))
 async def change_withd_way(call: types.CallbackQuery, callback_data: AdminManageCallback):
     if await db.adm_lvl_check(call.from_user.id) > conf.middle_lvl:
-        logging.warning(
+        logs.warning(
             f"Admin {call.from_user.id} change requisites from {await db.get_requisites(callback_data.id_oper)} to {callback_data.new_requisites}")
         await db.adm_update_withd(callback_data.id_oper, callback_data.new_way, callback_data.new_requisites)
         if callback_data.new_way == "bank":
@@ -632,7 +640,7 @@ async def change_withd_way(call: types.CallbackQuery, callback_data: AdminManage
                 [await b().BT_AdmLk()]
             ]))
     else:
-        logging.warning(
+        logs.warning(
             f"Admin {call.from_user.id} with access {await db.adm_lvl_check(call.from_user.id)} tried to get "
             f"access to admin functionality with call - {call}")
         await msg().no_access(call, "2 (Master)", "call")

@@ -1,19 +1,20 @@
 import psycopg2
 from datetime import datetime
+from bot.configs.env_reader import env_config
 
 
 class BotDB:
 
-    def __init__(self, db_file):
+    def __init__(self):
         self.conn = psycopg2.connect(
-            host='localhost',
-            dbname='lotEasy',
-            user='gloub',
-            password='1323',
-            port=5432)
+            host=env_config.db_host.get_secret_value(),
+            dbname=env_config.db_name.get_secret_value(),
+            user=env_config.db_user.get_secret_value(),
+            password=env_config.db_user_pass.get_secret_value(),
+            port=env_config.db_port.get_secret_value())
         self.cursor = self.conn.cursor()
 
-    async def get_user_exists(self, user_id, arg="user_id ="):
+    async def get_user_exists(self, user_id, arg='user_id ='):
         self.cursor.execute(f"SELECT id FROM users WHERE {arg} %s", (user_id,))
         return bool(len(self.cursor.fetchall()))
 
@@ -53,6 +54,14 @@ class BotDB:
         self.cursor.execute("INSERT INTO users (user_id, name, lastname, username) VALUES (%s, %s, %s, %s)",
                             (user_id, name, lastname, username))
         return self.conn.commit()
+
+    async def set_user_block_bot(self, user_id, arg):
+        self.cursor.execute("UPDATE users SET bot_blocked = %s WHERE user_id = %s", (arg, user_id,))
+        return self.conn.commit()
+
+    async def get_bot_block(self, user_id):
+        self.cursor.execute("SELECT bot_blocked FROM users WHERE user_id = %s", (user_id,))
+        return self.cursor.fetchone()[0]
 
     async def get_user_balance(self, user_id):
         self.cursor.execute("SELECT balance FROM users WHERE user_id = %s", (user_id,))
@@ -213,8 +222,12 @@ class BotDB:
         self.cursor.execute("SELECT COUNT (*) FROM payments WHERE done = false")
         return self.cursor.fetchone()[0]
 
+    async def get_lines_not_done_topup(self):
+        self.cursor.execute("SELECT COUNT (*) FROM payments WHERE (accrued = true and done = false)")
+        return self.cursor.fetchone()[0]
+
     async def all_no_topup_checker(self):
-        self.cursor.execute("SELECT int_pay, user_id, sum, accrued, done FROM payments WHERE done = False ORDER BY int_pay ASC FETCH NEXT 1 ROWS ONLY")
+        self.cursor.execute("SELECT int_pay, user_id, sum, accrued, done FROM payments WHERE (accrued = True AND done = False) ORDER BY int_pay ASC FETCH NEXT 1 ROWS ONLY")
         return [row for row in self.cursor.fetchone()]
 
     async def get_withd_way(self, withd_id):
@@ -299,5 +312,6 @@ class BotDB:
         return self.conn.commit()
 
     def close(self):
+        print("Db closed")
         self.conn.close()
 

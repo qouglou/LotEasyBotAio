@@ -1,10 +1,5 @@
-import asyncio
-
-from aiogram import Bot, types, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
-import conf
-from buttons import ButtonsTg as b
-dp = Dispatcher(storage=MemoryStorage())
+from aiogram import types
+from bot.templates.buttons import ButtonsTg as b
 
 
 class Messages:
