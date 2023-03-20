@@ -5,12 +5,13 @@
 </div>
 
 # LotEasyBotAio
-Игровой Telegram бот, позволяющий играть как в быстрые (с помощью <a href="https://telegram.org/blog/folders#and-one-more-thing">Telegram Dice</a>), так и в онлайн игры с другими пользователями.
+Игровой Telegram бот на Python, позволяющий играть как в быстрые (с помощью <a href="https://telegram.org/blog/folders#and-one-more-thing">Telegram Dice</a>), так и в онлайн игры с другими пользователями.
 
 # Технологии и инструменты
 
-<a href = "https://www.jetbrains.com/ru-ru/pycharm/">__PyCharm__</a> - среда разработки.
+<a href = "https://www.python.org/">__Python__</a> - язык программирования.
 
+<a href = "https://www.jetbrains.com/ru-ru/pycharm/">__PyCharm__</a> - среда разработки.
 
 <a href = "https://docs.aiogram.dev/en/dev-3.x/">__aiogram 3.x__</a> - работа с Telegram Bot API.
 
