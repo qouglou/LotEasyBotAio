@@ -2,8 +2,8 @@ from aiogram import Router
 from aiogram.filters.chat_member_updated import \
     ChatMemberUpdatedFilter, MEMBER, KICKED
 from aiogram.types import ChatMemberUpdated
-from bot.db_conn_create import db
-from bot.configs.logs_config import logs
+from db_conn_create import db
+from configs.logs_config import logs
 
 router = Router()
 

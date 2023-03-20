@@ -1,2 +1,3 @@
-from bot.db import BotDB as db
+from db import BotDB as db
+
 db = db()

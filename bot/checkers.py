@@ -1,13 +1,13 @@
 import asyncio
 
 from aiogram import Bot, types
-from bot.configs import conf
+from configs import conf
 import games
 from games import Games as g
 from callback_factory import BalanceManageCallback
-from bot.templates.buttons import ButtonsTg as b
-from bot.db_conn_create import db
-from bot.configs.logs_config import logs
+from templates.buttons import ButtonsTg as b
+from db_conn_create import db
+from configs.logs_config import logs
 
 
 class Checkers:
@@ -191,11 +191,3 @@ class Checkers:
                     pass
             M += 1
             await asyncio.sleep(conf.ch_winner_timer)
-
-
-
-
-
-
-
-

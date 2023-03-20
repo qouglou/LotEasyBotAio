@@ -1,18 +1,17 @@
 from aiogram import types, Router, F
 from aiogram.filters.command import Command
-from bot.middlewares.ban_rules_check import BanMsgMiddleware
-from bot.templates.texts import TextsTg as t
-from bot.templates.buttons import ButtonsTg as b
-from bot.checkers import Checkers as ch
-from bot.templates.messages import Messages as msg
-from bot.db_conn_create import db
-from bot.configs.logs_config import logs
+from middlewares.ban_rules_check import BanMsgMiddleware
+from templates.texts import TextsTg as t
+from templates.buttons import ButtonsTg as b
+from checkers import Checkers as ch
+from templates.messages import Messages as msg
+from db_conn_create import db
+from configs.logs_config import logs
 
 router = Router()
 router.message.middleware(BanMsgMiddleware())
 
 
-# Запуск бота
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
     if not await db.get_user_exists(message.from_user.id):

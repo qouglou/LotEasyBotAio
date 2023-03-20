@@ -17,7 +17,7 @@ ch_winner_timer = 30
 #games
 
 #max users
-max_users_king = 100
+max_users_king = 10
 max_users_russ = 6
 max_users_duel = 2
 

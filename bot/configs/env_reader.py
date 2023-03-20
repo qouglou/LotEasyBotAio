@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     db_port: SecretStr
 
     class Config:
-        env_file = '.env'
+        env_file = 'configs/.env'
         env_file_encoding = 'utf-8'
 
 

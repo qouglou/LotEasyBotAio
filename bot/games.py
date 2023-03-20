@@ -1,11 +1,11 @@
 import asyncio
 
 from aiogram import types
-from bot.configs import conf
+from configs import conf
 import random
-from bot.templates.buttons import ButtonsTg as b
-from bot.callback_factory import BalanceManageCallback
-from bot.db_conn_create import db
+from templates.buttons import ButtonsTg as b
+from callback_factory import BalanceManageCallback
+from db_conn_create import db
 
 
 class Games:

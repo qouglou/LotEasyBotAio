@@ -2,7 +2,7 @@ from typing import Callable, Dict, Any, Awaitable
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
-from bot.db_conn_create import db
+from db_conn_create import db
 
 
 def _is_bot_blocked(user_id):

@@ -1,9 +1,9 @@
 from typing import Callable, Dict, Any, Awaitable
 
 from aiogram import BaseMiddleware
-from bot.templates.messages import Messages as msg
+from templates.messages import Messages as msg
 from aiogram.types import Message, CallbackQuery
-from bot.db_conn_create import db
+from db_conn_create import db
 
 
 def _is_admin_valid(user_id):

@@ -2,8 +2,12 @@ from typing import Callable, Dict, Any, Awaitable
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
-from bot.templates.messages import Messages as msg
-from bot.db_conn_create import db
+from templates.messages import Messages as msg
+from db_conn_create import db
+
+
+def _is_user_exist(user_id):
+    return db.get_user_exists(user_id)
 
 
 def _is_user_banned(user_id):
@@ -57,8 +61,10 @@ class BanMsgMiddleware(BaseMiddleware):
         message: Message,
         data: Dict[str, Any]
     ):
-        if not await _is_user_banned(message.from_user.id):
-            return await handler(message, data)
+        if await _is_user_exist(message.from_user.id):
+            if not await _is_user_banned(message.from_user.id):
+                return await handler(message, data)
+            else:
+                await msg().info_ban(message)
         else:
-            await msg().info_ban(message)
-        return
+            return await handler(message, data)

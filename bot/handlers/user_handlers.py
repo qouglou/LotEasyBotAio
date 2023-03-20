@@ -3,22 +3,24 @@ import random
 from aiogram import types, Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.filters.command import Command
-from bot.configs import conf
+from configs import conf
 
-from bot.filters.is_forwarded import ForwardedFilter
-from bot.callback_factory import BalanceManageCallback, AdminManageCallback
-from bot.middlewares.ban_rules_check import BanRulesMsgMiddleware
-from bot.db_conn_create import db
-from bot.configs.logs_config import logs
+from filters.is_forwarded import ForwardedFilter
+from callback_factory import BalanceManageCallback, AdminManageCallback
+from middlewares.ban_rules_check import BanRulesMsgMiddleware
+from middlewares.bot_blocked_check import BotBlockedMsgMiddleware
+from db_conn_create import db
+from configs.logs_config import logs
 
-from bot.fsm import FSM
-from bot.templates.texts import TextsTg as t
-from bot.templates.buttons import ButtonsTg as b
-from bot.checkers import Checkers as ch
-from bot.templates.messages import Messages as msg
+from fsm import FSM
+from templates.texts import TextsTg as t
+from templates.buttons import ButtonsTg as b
+from checkers import Checkers as ch
+from templates.messages import Messages as msg
 
 router = Router()
 router.message.middleware(BanRulesMsgMiddleware())
+router.message.outer_middleware(BotBlockedMsgMiddleware())
 
 
 @router.message(ForwardedFilter())
@@ -56,21 +58,6 @@ async def uni_reply(message):
             reply_markup=await b().KB_Menu())
 
 
-# Запуск бота
-@router.message(Command("start"))
-async def cmd_start(message: types.Message):
-    if not await db.get_user_exists(message.from_user.id):
-        await db.add_user(message.from_user.id, message.from_user.first_name,
-                          message.from_user.last_name, message.from_user.username)
-        logs.info(f"User {message.from_user.id} start to use Bot with message {message}")
-        await msg().rules_accept(message, True)
-    await ch().data_checker(message.from_user)
-    if await db.get_rules_accept(message.from_user.id) == 0:
-        await msg().rules_accept(message, False)
-    else:
-        await msg().not_new(message)
-
-
 @router.callback_query(BalanceManageCallback.filter(F.action == "choose_way"))
 async def way_tw(call: types.CallbackQuery, callback_data: BalanceManageCallback):
     if callback_data.from_where == "main":
@@ -91,7 +78,6 @@ async def way_tw(call: types.CallbackQuery, callback_data: BalanceManageCallback
     await call.answer()
 
 
-# Возвращения в аккаунт. Запрос типа "back_to_acc"
 @router.callback_query(lambda call: call.data == "back_to_acc")
 async def back_acc(call):
     await ch().data_checker(call.from_user)
@@ -100,7 +86,6 @@ async def back_acc(call):
     await call.answer()
 
 
-# Ввод реквизитов вывода. Проверка возможности вывода введенной суммы. Запрос типа "способ(04)_withd_sum_сумма(06)"
 @router.callback_query(BalanceManageCallback.filter(F.action == "enter_requisites"))
 async def enter_req(call: types.CallbackQuery, callback_data: BalanceManageCallback, state: FSMContext):
     if callback_data.sum <= await db.get_user_balance(call.from_user.id):
@@ -114,7 +99,6 @@ async def enter_req(call: types.CallbackQuery, callback_data: BalanceManageCallb
         await call.answer()
 
 
-# Вывод справок об играх. Из главного меню. Запрос типа "que_тип игры(04)"
 @router.callback_query(lambda call: call.data[:4] == "que_")
 async def info_games(call: types.CallbackQuery):
     await call.message.edit_text(t.dct_games_que[call.data[4:8]], reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
@@ -124,7 +108,6 @@ async def info_games(call: types.CallbackQuery):
     await call.answer()
 
 
-# Назад к играм. Запрос типа "back_to_game_игра(04)"
 @router.callback_query(BalanceManageCallback.filter(F.action == "choose_bet"))
 async def back_games(call: types.CallbackQuery, callback_data: BalanceManageCallback):
     text, keyboard = await b().KBT_GameBet(callback_data.from_where)
@@ -132,9 +115,6 @@ async def back_games(call: types.CallbackQuery, callback_data: BalanceManageCall
     await call.answer()
 
 
-
-
-# Вывод списка операций/игр. Переход из ЛК или кнопок вперед/назад. Имеет пагинацию". Запрос типа story_ключ операции
 @router.callback_query(lambda call: call.data[:12] in ("story_topup_", "story_toadm_", "story_games_", "story_gaadm_"))
 async def story_oper(call):
     if call.data[6:11] in ("toadm", "gaadm"):
@@ -312,8 +292,6 @@ async def story_oper(call):
         await call.answer()
 
 
-# Выбор суммы пополнения/вывода. После выбора способа пополнения/вывода.
-# Запрос типа "way_тип транзакции(04)_способ(04)_откуда(04)"
 @router.callback_query(BalanceManageCallback.filter(F.action == "choose_sum"))
 async def choose_sum_topup(call: types.CallbackQuery, callback_data: BalanceManageCallback):
     if callback_data.way == "qiwi":
@@ -325,7 +303,6 @@ async def choose_sum_topup(call: types.CallbackQuery, callback_data: BalanceMana
     await call.answer()
 
 
-# Вывод информации для пополнения. После успешного создания заявки на пополнение. Запрос типа "способ(04)_topup_sum_сумма(06)"
 @router.callback_query(BalanceManageCallback.filter(F.action == "create_request"), BalanceManageCallback.filter(F.operation == "topup"))
 async def info_topup(call: types.CallbackQuery, callback_data: BalanceManageCallback):
     with open(f'difs/{callback_data.way[:1]}wallets.txt', 'r') as wallet:
@@ -334,14 +311,14 @@ async def info_topup(call: types.CallbackQuery, callback_data: BalanceManageCall
             counter.close()
         req = (wallet.readlines())[random.randint(0, max)]
         wallet.close()
-    await db.topup_create(call.from_user.id, callback_data.sum, callback_data.way, req)
+    await db.topup_create(call.from_user.id, callback_data.sum, callback_data.way, int(req))
     get_comm = await db.get_comm(call.from_user.id, callback_data.sum, callback_data.way)
     if callback_data.way == "qiwi":
         url_link = "https://qiwi.com/payment/form/99"
         m_topup_create = f"{t.m_topup_create_1}<b>{callback_data.sum}₽</b> на QIWI кошелек <code>+{req}</code> с комментарием <b>№" \
                          f"{get_comm}</b>{t.m_topup_create_2}"
     elif callback_data.way == "bank":
-        url_link = "https://qiwi.com/payment/form/99"
+        url_link = "https://yoomoney.ru/transfer/a2c"
         m_topup_create = f"{t.m_topup_create_1}<b>{callback_data.sum}₽</b> на карту <code>{req}</code> с комментарием <b>№" \
                          f"{get_comm}</b>{t.m_topup_create_2}"
     await call.message.edit_text(text=m_topup_create, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
@@ -351,7 +328,6 @@ async def info_topup(call: types.CallbackQuery, callback_data: BalanceManageCall
     await call.answer()
 
 
-# Ручной ввод суммы пополнения/вывода или ставки. После выбора ручного ввода. Запрос типа "способ(04)_операция(05)_other_sum" или игра(04)_bet_other_sum
 @router.callback_query(BalanceManageCallback.filter(F.action == "choose_other"))
 async def enter_sum_topup(call: types.CallbackQuery, callback_data: BalanceManageCallback, state: FSMContext):
     if callback_data.operation in ("topup", "withd"):
@@ -370,20 +346,18 @@ async def enter_sum_topup(call: types.CallbackQuery, callback_data: BalanceManag
     await state.set_state(FSM.other_sum)
 
 
-# Удаления сообщения. Запрос типа "delete_msg"
 @router.callback_query(lambda call: call.data[:11] == "delete_msg")
 async def deleter(call):
     await call.message.delete()
     await call.answer()
 
 
-# Проверка пополнения. Запрос типа "(re)check_topup_способ(04)_айди платежа(07)"
 @router.callback_query(BalanceManageCallback.filter(F.action == "check_topup"))
 async def check_topup(call: types.CallbackQuery, callback_data: BalanceManageCallback):
     await ch().topup_checker_user(call.message, callback_data.id_oper)
+    await call.answer()
 
 
-# Создание заявки на вывод после подтверждения правильности данных. Запрос типа "confirm_with_способ(04)_сумма(06)_реквизиты(17)"
 @router.callback_query(BalanceManageCallback.filter(F.action == "create_request"), BalanceManageCallback.filter(F.operation == "withd"))
 async def create_withd(call: types.CallbackQuery, callback_data: BalanceManageCallback):
     await db.with_create(call.from_user.id, callback_data.sum, callback_data.way, callback_data.requisites)
@@ -395,7 +369,6 @@ async def create_withd(call: types.CallbackQuery, callback_data: BalanceManageCa
     await call.answer()
 
 
-# Изменение игры. Запрос типа "change_bet"
 @router.callback_query(BalanceManageCallback.filter(F.action == "change_bet"))
 async def changer_bet(call: types.CallbackQuery):
     await call.message.delete()
@@ -404,15 +377,13 @@ async def changer_bet(call: types.CallbackQuery):
     await call.answer()
 
 
-# Создание игровой комнаты и обработка игры. Запрос типа "create_bet_игра(04)_сумма(06)
 @router.callback_query(BalanceManageCallback.filter(F.action == "check_bet"))
 @router.callback_query(BalanceManageCallback.filter(F.action == "create_bet"))
 async def creating_room(call: types.CallbackQuery, callback_data: BalanceManageCallback):
     await ch().bet_sum_checker(call.message, callback_data.game, callback_data.sum, callback_data.action, call.message.message_id)
+    await call.answer()
 
 
-
-# Обработчик ручного ввода реквизитов вывода.
 @router.message(FSM.requisites)
 async def user_get_requisites(message: types.Message, state: FSMContext):
     way = (await state.get_data())['way_withd']
@@ -479,7 +450,6 @@ async def dice_reply(message):
                          reply_markup=await b().KB_Menu())
 
 
-# Обработчик ручного ввода суммы пополнения/вывода и ставки
 @router.message(FSM.other_sum)
 async def user_other_sum_enter(message, state: FSMContext):
     buttons = []

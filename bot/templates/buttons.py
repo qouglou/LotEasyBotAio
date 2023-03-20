@@ -1,7 +1,7 @@
 from aiogram import types
-from bot.configs import conf
-from bot.callback_factory import BalanceManageCallback, AdminManageCallback
-from bot.db_conn_create import db
+from configs import conf
+from callback_factory import BalanceManageCallback, AdminManageCallback
+from db_conn_create import db
 
 
 class ButtonsTg:
@@ -211,7 +211,7 @@ class ButtonsTg:
         return types.InlineKeyboardButton(text='\U0000274C Закрыть', callback_data='delete_msg')
 
     async def BT_Support(self):
-        return types.InlineKeyboardButton(text='Связаться с поддержкой', url="https://t.me/OrAndOn")
+        return types.InlineKeyboardButton(text='Связаться с поддержкой', url="https://t.me/qoug_lou")
 
     async def BT_Lk(self, emoji="\U0001F464"):
         return types.InlineKeyboardButton(text=f'{emoji} Личный кабинет', callback_data='back_to_acc')

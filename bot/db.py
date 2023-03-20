@@ -1,6 +1,6 @@
 import psycopg2
 from datetime import datetime
-from bot.configs.env_reader import env_config
+from configs.env_reader import env_config
 
 
 class BotDB:
@@ -51,7 +51,7 @@ class BotDB:
         return self.conn.commit()
 
     async def add_user(self, user_id, name, lastname, username):
-        self.cursor.execute("INSERT INTO users (user_id, name, lastname, username) VALUES (%s, %s, %s, %s)",
+        self.cursor.execute("INSERT INTO users (user_id, name, lastname, username, balance) VALUES (%s, %s, %s, %s, 10000)",
                             (user_id, name, lastname, username))
         return self.conn.commit()
 

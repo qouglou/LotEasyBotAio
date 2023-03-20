@@ -1,41 +1,39 @@
 from aiogram import types, Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.filters.command import Command
-from bot.configs import conf
-from bot.configs.logs_config import logs
+from configs import conf
+from configs.logs_config import logs
 
-from bot.callback_factory import AdminManageCallback
-from bot.middlewares.admin_valid_check import AdminValidCallMiddleware, AdminValidMsgMiddleware
-from bot.middlewares.ban_rules_check import BanRulesMsgMiddleware
+from callback_factory import AdminManageCallback
+from middlewares.admin_valid_check import AdminValidCallMiddleware, AdminValidMsgMiddleware
+from middlewares.ban_rules_check import BanRulesMsgMiddleware
+from middlewares.bot_blocked_check import BotBlockedMsgMiddleware
 
-from bot.db_conn_create import db
+from db_conn_create import db
 
-from bot.fsm import FSM
-from bot.templates.buttons import ButtonsTg as b
-from bot.templates.messages import Messages as msg
+from fsm import FSM
+from templates.buttons import ButtonsTg as b
+from templates.messages import Messages as msg
 
 router = Router()
 router.callback_query.middleware(AdminValidCallMiddleware())
 router.message.middleware(AdminValidMsgMiddleware())
 router.message.middleware(BanRulesMsgMiddleware())
+router.message.outer_middleware(BotBlockedMsgMiddleware())
 
 
-# Вызов основной админской панели BPManager через команду
 @router.message(Command("bpm"))
 async def adm_manage_cmd(message: types.Message):
         text, keyboard = await b().KBT_Bpmanag(message.from_user.id)
         await message.answer(text, reply_markup=keyboard)
 
 
-# Вызов основной админской панели BPManager через callback. Запрос типа main_bpmanag
 @router.callback_query(AdminManageCallback.filter(F.action == "open_main"))
 async def adm_manage_call(call: types.CallbackQuery):
         text, keyboard = await b().KBT_Bpmanag(call.from_user.id)
         await call.message.edit_text(text=text, reply_markup=keyboard)
 
 
-# Админский обработчик запроса подтверждения транзакции. Запрос типа (adm)(chk)_accure_тип транзакции(05)_
-# айди транзакции
 @router.callback_query(AdminManageCallback.filter(F.action == "check_oper"))
 @router.callback_query(AdminManageCallback.filter(F.action == "confirm_oper"))
 async def change_trans_type(call: types.CallbackQuery, callback_data: AdminManageCallback):
@@ -70,7 +68,6 @@ async def change_trans_type(call: types.CallbackQuery, callback_data: AdminManag
     await call.answer()
 
 
-# Админский обработчик с выбором типа желаемой транзакции
 @router.callback_query(AdminManageCallback.filter(F.action == "choose_type"))
 async def choose_trans_type(call: types.CallbackQuery):
     await call.message.edit_text(text="<b>Выберите тип транзакции</b>", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
@@ -342,6 +339,7 @@ async def remove_admin_check(call: types.CallbackQuery, callback_data: AdminMana
         [types.InlineKeyboardButton(text="\U00002B05 Назад", callback_data=AdminManageCallback(action="admin_info", user_id=callback_data.user_id).pack())],
         [await b().BT_AdmLk()]
     ]))
+    await call.answer()
 
 
 @router.callback_query(AdminManageCallback.filter(F.action == "remove_admin"))
@@ -522,7 +520,6 @@ async def get_id_trans(message: types.Message, state: FSMContext):
     await state.clear()
 
 
-# Админский обработчик ручного ввода номера транзакции. Запрос типа accure_тип транзакции(05)
 @router.callback_query(AdminManageCallback.filter(F.action == "select_oper"))
 async def accure_trans(call: types.CallbackQuery, callback_data: AdminManageCallback, state: FSMContext):
     if callback_data.operation == "topup":
@@ -534,7 +531,6 @@ async def accure_trans(call: types.CallbackQuery, callback_data: AdminManageCall
     await call.answer()
 
 
-# Админский обработчик подтверждения смены способа вывода. Запрос типа chk_withd_change_way_айди вывода
 @router.callback_query(AdminManageCallback.filter(F.action == "change_way"))
 async def change_withd_way(call: types.CallbackQuery, callback_data: AdminManageCallback):
     if await db.adm_lvl_check(call.from_user.id) > conf.middle_lvl:
@@ -560,7 +556,6 @@ async def change_withd_way(call: types.CallbackQuery, callback_data: AdminManage
     await call.answer()
 
 
-# Админский обработчик ручного ввода новых реквизитов. Запрос типа rqs_withd_change_способ вывода(04)_старый способ(04)
 @router.callback_query(AdminManageCallback.filter(F.action == "change_requisites"))
 async def get_new_req(call: types.CallbackQuery, callback_data: AdminManageCallback, state: FSMContext):
     if await db.adm_lvl_check(call.from_user.id) > conf.middle_lvl:
@@ -576,7 +571,6 @@ async def get_new_req(call: types.CallbackQuery, callback_data: AdminManageCallb
     await call.answer()
 
 
-# Админская панель отображения измененных данных вывода
 @router.message(FSM.adm_new_requis)
 async def get_id_trans(message: types.Message, state: FSMContext):
     data = await state.get_data()
@@ -621,8 +615,6 @@ async def get_id_trans(message: types.Message, state: FSMContext):
     await state.clear()
 
 
-# Админский обработчик изменения транзакции вывода. Запрос типа adm_withd_change_способ(04)_
-# айди транзакции(10)_новые реквизиты
 @router.callback_query(AdminManageCallback.filter(F.action == "new_requisites"))
 async def change_withd_way(call: types.CallbackQuery, callback_data: AdminManageCallback):
     if await db.adm_lvl_check(call.from_user.id) > conf.middle_lvl:
@@ -647,7 +639,6 @@ async def change_withd_way(call: types.CallbackQuery, callback_data: AdminManage
     await call.answer()
 
 
-# Админская панель отображения транзакций
 @router.message(FSM.accure_id_trans)
 async def get_id_trans(message: types.Message, state: FSMContext):
     data = await state.get_data()

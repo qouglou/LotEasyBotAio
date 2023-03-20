@@ -1,12 +1,13 @@
 from aiogram import types
-from bot.templates.buttons import ButtonsTg as b
+from templates.buttons import ButtonsTg as b
 
 
 class Messages:
 
     async def rules_accept(self, message, newbie):
         if newbie:
-            text_send = f"Данный бот поможет вам быстро потерять свои деньги. \U0001F4B8\n" \
+            text_send = f"Данный телеграм бот является демонстрацией возможной реализации игрового бота.\n" \
+                        f"По умолчанию каждому новому игроку выдется 10000 единиц внутриигровой валюты для возможности просмотра реализованных игр. \U0001F4B8\n" \
                         f"\nНажимая кнопку <b>Принять правила</b> вы принимаете правила его использования и подтверждаете " \
                         f"свое совершеннолетие. \U0001F51E"
         else:
