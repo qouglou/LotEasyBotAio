@@ -9,6 +9,8 @@
 
 # Технологии и инструменты
 
+<a href = "https://releases.ubuntu.com/jammy/">__Ubuntu 22.04.2 LTS__</a> - операционная система.
+
 <a href = "https://www.python.org/">__Python__</a> - язык программирования.
 
 <a href = "https://www.jetbrains.com/ru-ru/pycharm/">__PyCharm__</a> - среда разработки.
